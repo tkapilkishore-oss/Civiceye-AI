@@ -421,20 +421,21 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col bg-background text-on-surface overflow-x-hidden pt-20">
+    <div className="flex-1 flex flex-col bg-transparent text-on-surface overflow-x-hidden pt-20 relative">
+      {/* WebGL Shader Background Layer */}
+      <div
+        ref={shaderContainerRef}
+        className="fixed inset-0 z-[-2] pointer-events-none opacity-50 w-full h-full"
+      />
+
+      {/* Three.js Neural Network Layer */}
+      <div
+        ref={threeContainerRef}
+        className="fixed inset-0 z-[-1] pointer-events-none opacity-40 w-full h-full"
+      />
+
       {/* Hero Section */}
       <section className="relative min-h-[85vh] flex flex-col items-center justify-center text-center px-6 md:px-12 overflow-hidden py-16">
-        {/* WebGL Shader Background Layer */}
-        <div
-          ref={shaderContainerRef}
-          className="absolute inset-0 z-[-1] pointer-events-none opacity-50 h-full w-full"
-        />
-
-        {/* Three.js Neural Network Layer */}
-        <div
-          ref={threeContainerRef}
-          className="absolute inset-0 z-0 pointer-events-none opacity-40 h-full w-full"
-        />
 
         {/* Ambient spotlight behind content */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-gradient-to-tr from-electric-blue/10 to-violet-600/10 rounded-full blur-[100px] -z-10 pointer-events-none" />
@@ -479,35 +480,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Tech Stack Banner */}
-      <section className="py-12 px-6 max-w-7xl mx-auto text-center border-t border-white/5 w-full">
-        <p className="font-display text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-6 opacity-60">
-          Powering Infrastructure with Next-Gen Tech
-        </p>
-        <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-8 md:gap-12 opacity-60 hover:opacity-90 transition-opacity">
-          <div className="flex items-center gap-2 glass-md px-4 py-2 rounded-full border-white/5">
-            <Cpu className="h-4 w-4 text-electric-blue" />
-            <span className="font-display text-xs font-bold">Gemini AI</span>
-          </div>
-          <div className="flex items-center gap-2 glass-md px-4 py-2 rounded-full border-white/5">
-            <span className="h-4 w-4 rounded-full bg-amber-500 block shrink-0" />
-            <span className="font-display text-xs font-bold">Firebase</span>
-          </div>
-          <div className="flex items-center gap-2 glass-md px-4 py-2 rounded-full border-white/5">
-            <span className="h-4 w-4 rounded-full bg-emerald-500 block shrink-0" />
-            <span className="font-display text-xs font-bold">Google Maps</span>
-          </div>
-          <div className="flex items-center gap-2 glass-md px-4 py-2 rounded-full border-white/5">
-            <Cpu className="h-4 w-4 text-violet-400" />
-            <span className="font-display text-xs font-bold">AI Studio</span>
-          </div>
-          <div className="flex items-center gap-2 glass-md px-4 py-2 rounded-full border-white/5">
-            <span className="h-4 w-4 rounded-full bg-electric-blue block shrink-0 animate-pulse" />
-            <span className="font-display text-xs font-bold">Google Stitch</span>
-          </div>
-        </div>
-      </section>
-
       {/* Live Product Preview */}
       <section className="py-16 px-6 max-w-7xl mx-auto w-full">
         <div className="glass-lg rounded-[2rem] p-8 md:p-12 relative overflow-hidden group border border-white/10 shadow-2xl">
@@ -547,7 +519,7 @@ export default function Home() {
                   </div>
                   <div>
                     <p className="text-[10px] font-display uppercase tracking-wider text-on-surface-variant font-bold">Active Wards</p>
-                    <p className="font-display text-2xl font-bold text-white">6 Zones</p>
+                    <p className="font-display text-2xl font-bold text-white">7 Wards</p>
                   </div>
                 </div>
               </div>

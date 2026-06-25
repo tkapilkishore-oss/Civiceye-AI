@@ -11,7 +11,7 @@ export default function Footer() {
             CivicEye <span className="text-electric-blue">AI</span>
           </span>
           <p className="text-on-surface-variant text-[11px] font-medium tracking-wide uppercase opacity-50">
-            © 2026 CivicEye AI. Powered by Google AI.
+            © 2026 CivicEye AI • Powered by Google AI
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-8">

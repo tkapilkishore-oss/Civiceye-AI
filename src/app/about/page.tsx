@@ -27,7 +27,7 @@ export default function AboutPage() {
           About CivicEye <span className="text-electric-blue">AI</span>
         </h1>
         <p className="text-on-surface-variant/75 text-xs mt-2 font-mono">
-          A Decentralized Municipal Intelligence Platform for Smart Cities
+          An AI-Powered Municipal Intelligence Platform for Smart Cities
         </p>
       </div>
 

@@ -45,7 +45,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "operations" | "copilot">("overview");
 
   // Animating values state
-  const [healthScore, setHealthScore] = useState(86);
+  const [healthScore, setHealthScore] = useState(82);
   const [totalReports, setTotalReports] = useState(14);
   const [resolvedCases, setResolvedCases] = useState(2);
   const [avgResponseM, setAvgResponseM] = useState(14);
