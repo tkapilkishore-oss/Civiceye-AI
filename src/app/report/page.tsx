@@ -1034,12 +1034,17 @@ export default function ReportPage() {
                     <button
                       key={cat.name}
                       onClick={() => setSelectedCategory(cat.name)}
-                      className={`glass-md p-6 rounded-2xl flex flex-col items-center gap-3 transition-all duration-300 hover:-translate-y-0.5 active:scale-95 group border border-transparent ${
+                      className={`glass-md p-6 rounded-2xl flex flex-col items-center gap-3 transition-all duration-300 hover:-translate-y-1 active:scale-98 group border relative ${
                         selectedCategory === cat.name
-                          ? "border-electric-blue/40 bg-white/5 shadow-lg shadow-electric-blue/5"
-                          : ""
+                          ? "border-electric-blue bg-electric-blue/5 shadow-[0_0_15px_rgba(0,209,255,0.15)] -translate-y-1 scale-102"
+                          : "border-transparent"
                       }`}
                     >
+                      {selectedCategory === cat.name && (
+                        <div className="absolute top-2.5 right-2.5 w-4.5 h-4.5 rounded-full bg-electric-blue flex items-center justify-center shadow-[0_0_8px_#00D1FF] z-20">
+                          <span className="material-symbols-outlined text-[10px] text-background font-black">check</span>
+                        </div>
+                      )}
                       <div className={`w-12 h-12 rounded-xl bg-surface-container-high flex items-center justify-center transition-all ${
                         selectedCategory === cat.name
                           ? "bg-electric-blue/15 text-electric-blue"
