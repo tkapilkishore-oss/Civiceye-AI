@@ -4,15 +4,8 @@ import { useEffect, useState, useRef } from "react";
 import {
   Terminal,
   Activity,
-  Award,
   Layers,
-  Cpu,
-  CheckCircle,
-  Database,
-  ArrowRight,
-  ShieldCheck,
-  Compass,
-  AlertTriangle
+  Cpu
 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
@@ -134,8 +127,8 @@ export default function OrchestrationPage() {
       const typeStr = (report.issue_type || "Pothole").toUpperCase();
       const severityStr = (report.priority || report.severity || "High").toUpperCase();
       const authorityStr = (report.authority || "Municipal Department").toUpperCase();
-      const latVal = report.latitude ? Number(report.latitude).toFixed(4) : "40.7128";
-      const lngVal = report.longitude ? Number(report.longitude).toFixed(4) : "-74.0060";
+      const latVal = report.latitude ? Number(report.latitude).toFixed(4) : "12.9716";
+      const lngVal = report.longitude ? Number(report.longitude).toFixed(4) : "77.5946";
 
       return [
         `[SYSTEM] INITIALIZING CORE INFRASTRUCTURE SENSORS...`,
@@ -220,7 +213,7 @@ export default function OrchestrationPage() {
                 {pipelineNodes.map((node) => {
                   const isCompleted = node.id < activeNode;
                   const isProcessing = node.id === activeNode;
-                  const isPending = node.id > activeNode;
+
 
                   let statusText = "Pending";
                   let statusColor = "text-slate-500 border-white/5 bg-slate-900/60";

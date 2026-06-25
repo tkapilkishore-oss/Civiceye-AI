@@ -5,20 +5,17 @@
 export function sanitizeReportForLocalStorage(report: any): any {
   if (!report) return report;
 
-  // Destructure to separate large properties from the lightweight metadata
-  const {
-    image_url,
-    capturedImage,
-    image,
-    repair_image,
-    repaired_image_url,
-    complaint_draft,
-    action_plan,
-    explainability,
-    pdf,
-    pdf_content,
-    ...lightweightReport
-  } = report;
+  const lightweightReport = { ...report };
+  delete lightweightReport.image_url;
+  delete lightweightReport.capturedImage;
+  delete lightweightReport.image;
+  delete lightweightReport.repair_image;
+  delete lightweightReport.repaired_image_url;
+  delete lightweightReport.complaint_draft;
+  delete lightweightReport.action_plan;
+  delete lightweightReport.explainability;
+  delete lightweightReport.pdf;
+  delete lightweightReport.pdf_content;
 
   return lightweightReport;
 }

@@ -10,7 +10,6 @@ import {
   Clipboard,
   Check,
   Building2,
-  Calendar,
   Cloud,
   Clock,
   Compass,
@@ -137,7 +136,6 @@ export default function ReportDetailPage({ params }: PageProps) {
 
     const primaryColor = [15, 23, 42]; // Slate-900
     const accentColor = [14, 165, 233]; // Sky-500 (Clean Blue)
-    const darkGray = [75, 85, 99]; // Gray-600
     const lightGray = [243, 244, 246]; // Gray-100
     const lineGray = [229, 231, 235]; // Gray-200
 
@@ -585,7 +583,8 @@ export default function ReportDetailPage({ params }: PageProps) {
             localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
           }
         }
-      } catch (e) {}
+      } catch {
+      }
 
       try {
         await fetch("/api/reports", {
@@ -593,7 +592,7 @@ export default function ReportDetailPage({ params }: PageProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, status: "Resolved" }),
         });
-      } catch (e) {}
+      } catch {}
 
       showToast("Incident successfully resolved and closed.");
       setVerificationResult(null);
@@ -619,7 +618,7 @@ export default function ReportDetailPage({ params }: PageProps) {
             localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
           }
         }
-      } catch (e) {}
+      } catch {}
 
       try {
         await fetch("/api/reports", {
@@ -627,7 +626,7 @@ export default function ReportDetailPage({ params }: PageProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, status: "Investigating", internal_notes: notes }),
         });
-      } catch (e) {}
+      } catch {}
 
       showToast("Ticket reopened due to poor repair quality.");
       setVerificationResult(null);
@@ -687,8 +686,8 @@ export default function ReportDetailPage({ params }: PageProps) {
         const ward = "Ward 3 - Metro Junction";
         const confidence = 0.98;
 
-        let authority = "Municipal Corporation Roads Department";
-        let actionPlan = 
+        const authority = "Municipal Corporation Roads Department";
+        const actionPlan = 
           "1. Dispatch ward inspector to coordinates for physical measurement within 12 hours.\n2. Apply safety barricades and light warnings around repair site.\n3. Deploy maintenance crew for deep pothole excavation, cold-mix base laying, and asphalt layer roll-out.\n4. Conduct structural density scan to update ward road scores.";
 
         const mockResult: GenerateReportResponse & {
@@ -1193,7 +1192,7 @@ export default function ReportDetailPage({ params }: PageProps) {
                             } else {
                               throw new Error();
                             }
-                          } catch (e) {
+                          } catch {
                             setVerificationResult({
                               completion_percentage: 98,
                               quality_score: 9.5,
@@ -1205,7 +1204,7 @@ export default function ReportDetailPage({ params }: PageProps) {
                           setVerifying(false);
                         };
                         reader.readAsDataURL(blob);
-                      } catch (err) {
+                      } catch {
                         const canvas = document.createElement("canvas");
                         canvas.width = 600;
                         canvas.height = 400;

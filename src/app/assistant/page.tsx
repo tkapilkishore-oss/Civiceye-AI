@@ -8,11 +8,8 @@ import {
   Bot, 
   User, 
   Sparkles, 
-  MessageSquare, 
   ArrowLeft, 
-  CornerDownLeft, 
   Trash2,
-  AlertCircle,
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
@@ -45,12 +42,12 @@ export default function AssistantPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const suggestedPrompts = [
-    "Who should repair this pothole?",
-    "Is this issue dangerous?",
-    "How long do road repairs usually take?",
-    "Which authority handles water leaks?",
-    "Explain why the AI classified this as High severity.",
-    "What information should I include in my complaint?"
+    "Which government department is responsible for repairing potholes in Bangalore?",
+    "How long does BBMP usually take to repair a reported pothole?",
+    "I want to report a water leakage near my house. How do I begin?",
+    "How does CivicEye AI analyze and prioritize civic complaints?",
+    "How is my complaint routed to the correct municipal authority?",
+    "What happens after I submit a complaint through CivicEye AI?"
   ];
 
   // Auto scroll to bottom
@@ -161,7 +158,7 @@ export default function AssistantPage() {
           }
         ]);
       }
-    } catch (err) {
+    } catch {
       setLoading(false);
       setMessages((prev) => [
         ...prev,

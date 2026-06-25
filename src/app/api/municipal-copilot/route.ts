@@ -55,7 +55,7 @@ async function fetchWithRetry(
   throw lastError || new Error("Gemini max retries reached in copilot.");
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const reports = await getAllReports();
     

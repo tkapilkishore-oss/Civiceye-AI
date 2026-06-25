@@ -8,11 +8,10 @@ function getMockReportResponse(
   issue_type: string,
   locality: string,
   ward: string,
-  severity: "Low" | "Medium" | "High" | "Critical",
-  follow_up_answers?: any[]
+  severity: "Low" | "Medium" | "High" | "Critical"
 ): GenerateReportResponse {
   let authority = "Municipal Corporation Roads Department";
-  let priority = severity || "High";
+  const priority = severity || "High";
   let action_plan = `1. Dispatch field inspector to ${locality} within 24 hours.\n2. Deploy contractor for excavation and base fill.\n3. Conduct post-repair quality verification.`;
   let cost = 5500;
   let materials = ["Asphalt Cold-Mix", "Sub-base Crushed Stone", "Sealant Coat"];
@@ -134,7 +133,7 @@ export async function POST(request: Request) {
 
     if (testMode || !apiKey) {
       console.log(`Running in testMode (${testMode}) or missing apiKey. Using mock generator.`);
-      const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity, follow_up_answers);
+      const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity);
       response = { ...mockObj, id: reportId };
     } else {
       // Real Gemini API Call
@@ -176,7 +175,7 @@ Guidelines:
 - The action_plan should consist of 3-5 specific, technical steps.
 - Do not wrap the JSON in markdown code blocks. Return only the clean JSON string.`;
 
-      let parts: any[] = [{ text: promptText }];
+      const parts: any[] = [{ text: promptText }];
       
       if (image_url) {
         const match = image_url.match(/^data:(image\/[a-zA-Z0-9.-]+);base64,(.+)$/);
@@ -268,7 +267,7 @@ Guidelines:
           "Gemini API generate-report failed. Gracefully falling back to mock response data. Error details:",
           apiErr.message || apiErr
         );
-        const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity, follow_up_answers);
+        const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity);
         response = { ...mockObj, id: reportId };
       }
     }
@@ -298,7 +297,7 @@ Guidelines:
         contact_info: contact_info || "Not provided",
         description: description || "",
         follow_up_answers: follow_up_answers || [],
-        explainability: body.explainability || {
+        explainability: explainability || {
           visual_evidence: "Visual defect features detected.",
           severity_reasoning: `Categorized as ${requestSeverity} based on vision inputs.`,
           authority_reasoning: `Routed to ${response.authority}.`,

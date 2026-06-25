@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Mail, MapPin, Clock, Calendar, HelpCircle, Send } from "lucide-react";
+import { ArrowLeft, Mail, MapPin, Clock, Calendar, Send } from "lucide-react";
 
 export default function ContactPage() {
   return (

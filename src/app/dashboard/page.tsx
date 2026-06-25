@@ -10,30 +10,17 @@ import {
   Timer,
   Users,
   MapPin,
-  Plus,
-  Minus,
   Sliders,
-  Layers,
-  Map as MapIcon,
   ShieldAlert,
   Search,
-  Filter,
-  Calendar,
-  UserCheck,
-  Briefcase,
   Wrench,
-  Tag,
   ChevronRight,
   AlertTriangle,
-  Archive,
   Bot,
   Sparkles,
   Send,
   X,
-  PlusCircle,
-  Activity,
   LineChart,
-  BarChart3,
   IndianRupee
 } from "lucide-react";
 import WardScores from "@/components/WardScores";
@@ -58,12 +45,12 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "operations" | "copilot">("overview");
 
   // Animating values state
-  const [healthScore, setHealthScore] = useState(0);
-  const [totalReports, setTotalReports] = useState(0);
-  const [resolvedCases, setResolvedCases] = useState(0);
-  const [avgResponseM, setAvgResponseM] = useState(0);
-  const [avgResponseS, setAvgResponseS] = useState(0);
-  const [activeAgents, setActiveAgents] = useState(0);
+  const [healthScore, setHealthScore] = useState(86);
+  const [totalReports, setTotalReports] = useState(14);
+  const [resolvedCases, setResolvedCases] = useState(2);
+  const [avgResponseM, setAvgResponseM] = useState(14);
+  const [avgResponseS, setAvgResponseS] = useState(20);
+  const [activeAgents, setActiveAgents] = useState(170);
   const [mapZoom, setMapZoom] = useState(MAP_CONFIG.defaultZoom);
   const [mapCenter, setMapCenter] = useState<[number, number]>(MAP_CONFIG.defaultCenter);
 
@@ -180,14 +167,16 @@ export default function DashboardPage() {
 
   // Recalculate metrics on reports list updates
   useEffect(() => {
+    if (reportsList.length === 0) return;
+
     const INITIAL_WARD_STATS = [
-      { overall_score: 84 },
-      { overall_score: 68 },
-      { overall_score: 52 },
+      { overall_score: 95 },
+      { overall_score: 88 },
+      { overall_score: 81 },
       { overall_score: 76 },
-      { overall_score: 41 },
-      { overall_score: 59 },
-      { overall_score: 63 },
+      { overall_score: 71 },
+      { overall_score: 92 },
+      { overall_score: 84 },
       { overall_score: 70 },
     ];
 
@@ -216,19 +205,21 @@ export default function DashboardPage() {
         else roadD += ded / 2;
       });
 
-      const road = Math.max(10, 95 - roadD);
-      const water = Math.max(10, 95 - waterD);
-      const light = Math.max(10, 95 - lightD);
-      const waste = Math.max(10, 95 - wasteD);
+      const base = w.overall_score;
+      const road = Math.max(10, base - roadD);
+      const water = Math.max(10, base - waterD);
+      const light = Math.max(10, base - lightD);
+      const waste = Math.max(10, base - wasteD);
       return Math.round((road + water + light + waste) / 4);
     });
 
-    const avgHealth = Math.round(computedWardScores.reduce((a, b) => a + b, 0) / computedWardScores.length);
+    const activeWards = computedWardScores.filter((_, idx) => !WARDS_LIST[idx].toLowerCase().includes("unknown"));
+    const avgHealth = Math.round(activeWards.reduce((a, b) => a + b, 0) / activeWards.length);
 
     
     // Trigger animation
     const targetTotal = reportsList.length;
-    const targetResolved = reportsList.filter(r => r.status === "Completed" || r.status === "Resolved").length;
+    const targetResolved = reportsList.filter(r => r.status === "Completed" || r.status === "Resolved" || r.status === "Repair Started").length;
     const targetAvgM = 14;
     const targetAvgS = 20;
     const targetAgents = 156 + reportsList.length;
@@ -266,48 +257,7 @@ export default function DashboardPage() {
   // Circular gauge offset (circumference = 283)
   const strokeOffset = 283 - (healthScore / 100) * 283;
 
-  // Convert lat/lng to map coordinates
-  const getMapPosition = (lat?: number, lng?: number) => {
-    const minLat = 40.65;
-    const maxLat = 40.85;
-    const minLng = -74.10;
-    const maxLng = -73.90;
 
-    if (lat === undefined || lng === undefined || lat === null || lng === null || isNaN(lat) || isNaN(lng)) {
-      return null;
-    }
-
-    const top = 100 - ((lat - minLat) / (maxLat - minLat)) * 100;
-    const left = ((lng - minLng) / (maxLng - minLng)) * 100;
-
-    return {
-      top: `${Math.max(5, Math.min(95, top))}%`,
-      left: `${Math.max(5, Math.min(95, left))}%`
-    };
-  };
-
-  const getCategoryPhoto = (category: string) => {
-    const catLower = (category || "").toLowerCase();
-    if (catLower.includes("pothole") || catLower.includes("road")) {
-      return "/test_images/pothole.jpg";
-    }
-    if (catLower.includes("water") || catLower.includes("pipe") || catLower.includes("leak")) {
-      return "/test_images/water_pipe_burst.jpg";
-    }
-    if (catLower.includes("garbage") || catLower.includes("trash") || catLower.includes("waste") || catLower.includes("accum")) {
-      return "/test_images/garbage.jpg";
-    }
-    if (catLower.includes("light") || catLower.includes("lamp") || catLower.includes("street-light") || catLower.includes("broken lights")) {
-      return "/test_images/streetlight.jpg";
-    }
-    if (catLower.includes("drain")) {
-      return "/test_images/water_pipe_burst.jpg";
-    }
-    if (catLower.includes("tree") || catLower.includes("wood")) {
-      return "/test_images/pothole.jpg";
-    }
-    return "/test_images/pothole.jpg";
-  };
 
   // Operations Console Filter & Search logic
   const filteredReports = reportsList.filter((r) => {
@@ -393,7 +343,7 @@ export default function DashboardPage() {
       } else {
         triggerToast("Failed to update status.");
       }
-    } catch (err) {
+    } catch {
       triggerToast("Network error.");
     } finally {
       setSavingDrawer(false);
@@ -426,7 +376,7 @@ export default function DashboardPage() {
           { role: "model", content: "Error contacting municipal copilot core engine. Please check connections." }
         ]);
       }
-    } catch (err) {
+    } catch {
       setCopilotMessages((prev) => [
         ...prev,
         { role: "model", content: "Failed to connect to the intelligence system." }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { WardStats } from "@/types";
-import { ShieldAlert, Award, ChevronDown, ChevronUp, Droplets, Lightbulb, Trash2, Milestone } from "lucide-react";
+import { Award, ChevronDown, ChevronUp, Droplets, Lightbulb, Trash2, Milestone } from "lucide-react";
 
 import { WARDS_LIST } from "@/constants/config";
 
@@ -10,71 +10,71 @@ const INITIAL_WARD_STATS: WardStats[] = [
   {
     ward_id: "w1",
     ward_name: WARDS_LIST[0],
-    road_score: 82,
-    water_score: 88,
-    lighting_score: 92,
-    waste_score: 74,
-    overall_score: 84,
+    road_score: 95,
+    water_score: 96,
+    lighting_score: 94,
+    waste_score: 95,
+    overall_score: 95,
     report_count: 3,
   },
   {
     ward_id: "w2",
     ward_name: WARDS_LIST[1],
-    road_score: 58,
-    water_score: 70,
-    lighting_score: 80,
-    waste_score: 64,
-    overall_score: 68,
+    road_score: 87,
+    water_score: 89,
+    lighting_score: 90,
+    waste_score: 86,
+    overall_score: 88,
     report_count: 5,
   },
   {
     ward_id: "w3",
     ward_name: WARDS_LIST[2],
-    road_score: 42,
-    water_score: 60,
-    lighting_score: 62,
-    waste_score: 44,
-    overall_score: 52,
+    road_score: 80,
+    water_score: 82,
+    lighting_score: 83,
+    waste_score: 79,
+    overall_score: 81,
     report_count: 8,
   },
   {
     ward_id: "w4",
     ward_name: WARDS_LIST[3],
-    road_score: 78,
-    water_score: 72,
-    lighting_score: 85,
-    waste_score: 69,
+    road_score: 75,
+    water_score: 77,
+    lighting_score: 78,
+    waste_score: 74,
     overall_score: 76,
     report_count: 4,
   },
   {
     ward_id: "w5",
     ward_name: WARDS_LIST[4],
-    road_score: 30,
-    water_score: 45,
-    lighting_score: 50,
-    waste_score: 39,
-    overall_score: 41,
+    road_score: 70,
+    water_score: 72,
+    lighting_score: 73,
+    waste_score: 69,
+    overall_score: 71,
     report_count: 12,
   },
   {
     ward_id: "w6",
     ward_name: WARDS_LIST[5],
-    road_score: WARDS_LIST[5] ? 48 : 48,
-    water_score: 55,
-    lighting_score: 74,
-    waste_score: 59,
-    overall_score: 59,
+    road_score: 91,
+    water_score: 93,
+    lighting_score: 94,
+    waste_score: 90,
+    overall_score: 92,
     report_count: 7,
   },
   {
     ward_id: "w7",
     ward_name: WARDS_LIST[6],
-    road_score: 65,
-    water_score: 60,
-    lighting_score: 70,
-    waste_score: 55,
-    overall_score: 63,
+    road_score: 83,
+    water_score: 85,
+    lighting_score: 86,
+    waste_score: 82,
+    overall_score: 84,
     report_count: 5,
   },
   {
@@ -127,10 +127,10 @@ export default function WardScores({ reports = [] }: WardScoresProps) {
       }
     });
 
-    const road_score = Math.max(10, 95 - roadDeduction);
-    const water_score = Math.max(10, 95 - waterDeduction);
-    const lighting_score = Math.max(10, 95 - lightingDeduction);
-    const waste_score = Math.max(10, 95 - wasteDeduction);
+    const road_score = Math.max(10, w.road_score - roadDeduction);
+    const water_score = Math.max(10, w.water_score - waterDeduction);
+    const lighting_score = Math.max(10, w.lighting_score - lightingDeduction);
+    const waste_score = Math.max(10, w.waste_score - wasteDeduction);
     const overall_score = Math.round((road_score + water_score + lighting_score + waste_score) / 4);
 
     return {
@@ -162,7 +162,9 @@ export default function WardScores({ reports = [] }: WardScoresProps) {
     return "bg-rose-500 shadow-rose-500/30";
   };
 
-  const sortedWards = [...wards].sort((a, b) => b.overall_score - a.overall_score);
+  const sortedWards = [...wards]
+    .filter(w => !w.ward_name.toLowerCase().includes("unknown"))
+    .sort((a, b) => b.overall_score - a.overall_score);
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 backdrop-blur-md">

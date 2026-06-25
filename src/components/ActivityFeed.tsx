@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, ShieldAlert, CheckCircle, Clock, MapPin, Sparkles, User, Database, ArrowRight } from "lucide-react";
+import { CheckCircle, Clock, MapPin, Sparkles, ArrowRight } from "lucide-react";
 
 interface AgentLog {
   agentName: string;
@@ -143,7 +143,7 @@ export default function ActivityFeed({ reports: dbReports = [] }: ActivityFeedPr
           const diffHrs = Math.floor(diffMins / 60);
           friendlyTime = `${diffHrs} ${diffHrs === 1 ? "hour" : "hours"} ago`;
         }
-      } catch (e) {
+      } catch {
         // Ignore
       }
     }

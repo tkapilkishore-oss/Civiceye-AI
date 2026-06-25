@@ -12,9 +12,7 @@ import {
   BrainCircuit,
   Database,
   ArrowRight,
-  ShieldCheck,
-  RefreshCw,
-  Image as ImageIcon
+  ShieldCheck
 } from "lucide-react";
 import { AnalyzeImageResponse, GenerateReportResponse } from "@/types";
 import { MAP_CONFIG, WARDS_LIST, deriveWardFromAddress } from "@/constants/config";
@@ -58,7 +56,7 @@ export default function ReportPage() {
   // Autocomplete search suggestions
   const [searchQuery, setSearchQuery] = useState("");
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+
 
   // Map center and zoom
   const [mapCenter, setMapCenter] = useState<[number, number]>(MAP_CONFIG.defaultCenter);
@@ -71,12 +69,7 @@ export default function ReportPage() {
   const [stateName, setStateName] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [locationResolvingState, setLocationResolvingState] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
   // API Call 1 response data
   const [analysis, setAnalysis] = useState<AnalyzeImageResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -96,7 +89,7 @@ export default function ReportPage() {
 
   // Judge Demo state variables
   const [isDemoLoading, setIsDemoLoading] = useState(false);
-  const [demoType, setDemoType] = useState<string | null>(null);
+
 
   const wardsList = WARDS_LIST;
 
@@ -208,7 +201,7 @@ export default function ReportPage() {
           setMapZoom(16);
           
           const addr = item.address || {};
-          const extractedLocality = addr.suburb || addr.neighbourhood || addr.road || addr.residential || addr.subdivision || addr.subdistrict || "";
+
           const extractedCity = addr.city || addr.town || addr.village || "Bengaluru";
           const extractedState = addr.state || "Karnataka";
           const extractedPostcode = addr.postcode || "";
@@ -266,7 +259,7 @@ export default function ReportPage() {
     }
 
     try {
-      setIsSearching(true);
+
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&limit=5&countrycodes=in&viewbox=77.4,13.1,77.8,12.8`;
       const res = await fetch(url, {
         headers: { "User-Agent": "CivicEyeAI-Hackathon-App" }
@@ -278,7 +271,7 @@ export default function ReportPage() {
     } catch (err) {
       console.error("Nominatim search failed:", err);
     } finally {
-      setIsSearching(false);
+
     }
   };
 
@@ -370,12 +363,12 @@ export default function ReportPage() {
 
   const handleLoadDemo = async (type: "pothole" | "water" | "garbage" | "streetlight") => {
     setIsDemoLoading(true);
-    setDemoType(type);
+
 
     let url = "";
     let category = "";
-    let demoCity = "Bengaluru";
-    let demoState = "Karnataka";
+    const demoCity = "Bengaluru";
+    const demoState = "Karnataka";
 
     switch (type) {
       case "pothole":
@@ -423,7 +416,7 @@ export default function ReportPage() {
         
         setStep("details");
         setIsDemoLoading(false);
-        setDemoType(null);
+
       };
       reader.readAsDataURL(blob);
     } catch (err) {
@@ -469,7 +462,7 @@ export default function ReportPage() {
       
       setStep("details");
       setIsDemoLoading(false);
-      setDemoType(null);
+
     }
   };
 
@@ -554,7 +547,7 @@ export default function ReportPage() {
           report.supporter_count = nextCount;
           localStorage.setItem(`report_${duplicateReport.id}`, JSON.stringify(sanitizeReportForLocalStorage(report)));
         }
-      } catch (e) {}
+      } catch {}
 
       router.push(`/report/${duplicateReport.id}`);
     } catch (err) {
@@ -1022,7 +1015,11 @@ export default function ReportPage() {
                 <div className="glass-sm px-5 py-2.5 rounded-full flex items-center gap-3 font-display text-xs text-on-surface-variant border border-white/5">
                   <MapPin className="text-electric-blue h-4.5 w-4.5" />
                   <span>
-                    Current Location: <span className="text-on-surface font-semibold">40.7128° N, 74.0060° W</span>
+                    Current Location: <span className="text-on-surface font-semibold">
+                      {latitude !== undefined && longitude !== undefined
+                        ? `${Math.abs(latitude).toFixed(4)}° ${latitude >= 0 ? "N" : "S"}, ${Math.abs(longitude).toFixed(4)}° ${longitude >= 0 ? "E" : "W"}`
+                        : "12.9716° N, 77.5946° E"}
+                    </span>
                   </span>
                 </div>
               </div>

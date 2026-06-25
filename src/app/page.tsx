@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowRight, Eye, ShieldAlert, Cpu, Landmark, Users, Award } from "lucide-react";
 import * as THREE from "three";
@@ -8,7 +8,7 @@ import * as THREE from "three";
 export default function Home() {
   const threeContainerRef = useRef<HTMLDivElement>(null);
   const shaderContainerRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState("all");
+
 
   // Load WebGL background shader client-side
   useEffect(() => {
