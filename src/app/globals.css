@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #c6c6cc;
+  --color-primary-container: #0a0c10;
+  --color-on-primary: #2f3035;
+  --color-primary-fixed: #e2e2e8;
+  --color-primary-fixed-dim: #c6c6cc;
+  
+  --color-secondary: #c8c6c8;
+  --color-secondary-container: #474649;
+  --color-secondary-fixed: #e4e2e4;
+  --color-secondary-fixed-dim: #c8c6c8;
+  
+  --color-tertiary: #d0c4ba;
+  --color-tertiary-container: #100b06;
+  --color-tertiary-fixed: #ede0d6;
+  --color-tertiary-fixed-dim: #d0c4ba;
+  
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+  
+  --color-background: #141314;
+  --color-surface: #141314;
+  --color-surface-dim: #141314;
+  --color-surface-bright: #3a3939;
+  --color-surface-container-lowest: #0e0e0e;
+  --color-surface-container-low: #1c1b1c;
+  --color-surface-container: #201f20;
+  --color-surface-container-high: #2a2a2a;
+  --color-surface-container-highest: #353435;
+  
+  --color-on-surface: #e5e2e2;
+  --color-on-surface-variant: #c6c6cb;
+  --color-outline: #909095;
+  --color-outline-variant: #45474b;
+  
+  --color-electric-blue: #00D1FF;
+  --color-cyan-accent: #00F0FF;
+
+  --font-sans: var(--font-inter), sans-serif;
+  --font-display: var(--font-geist-sans), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+}
+/* Material Symbols Outlined Icon Styling */
+
+/* Custom glassmorphism layers */
+.glass-sm {
+  backdrop-filter: blur(8px);
+  background: rgba(10, 12, 16, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-md {
+  backdrop-filter: blur(16px);
+  background: rgba(10, 12, 16, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-lg {
+  backdrop-filter: blur(32px);
+  background: rgba(10, 12, 16, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Rotating conic shimmer border for elevated AI panels */
+.shimmer-border {
+  position: relative;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.shimmer-border::after {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(from 0deg, transparent, rgba(0, 209, 255, 0.3), transparent 60%);
+  animation: rotate-conic 8s linear infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes rotate-conic {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Laser Scanner overlay animation */
+.scanning-line {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, #00D1FF, transparent);
+  position: absolute;
+  top: 0;
+  left: 0;
+  animation: scan-vertical 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes scan-vertical {
+  0% { top: 0; opacity: 0; }
+  50% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* Typing cursor indicator */
+.typing::after {
+  content: '|';
+  animation: blink-cursor 0.8s step-end infinite;
+}
+
+@keyframes blink-cursor {
+  from, to { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Custom scrollbars for analytical tables and logs */
+.terminal-scroll::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+.terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Scroll reveal standard states */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Leaflet integration and custom animations */
+@import "leaflet/dist/leaflet.css";
+
+@keyframes marker-ping {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.custom-leaflet-marker {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: none !important;
+  border: none !important;
+}
+
+/* Ensure Leaflet controls sit nicely under fixed headers */
+.leaflet-top, .leaflet-bottom {
+  z-index: 40 !important;
+}
+
