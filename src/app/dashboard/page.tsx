@@ -21,10 +21,13 @@ import {
   Send,
   X,
   LineChart,
-  IndianRupee
+  IndianRupee,
+  Check
 } from "lucide-react";
 import WardScores from "@/components/WardScores";
-import { sanitizeReportsListForLocalStorage, cleanAllLocalStorageReports } from "@/lib/storageHelper";
+import { useDemo } from "@/components/DemoProvider";
+import { motion, AnimatePresence } from "framer-motion";
+import { sanitizeReportsListForLocalStorage, cleanAllLocalStorageReports, safeSetLocalStorageItem } from "@/lib/storageHelper";
 import ActivityFeed from "@/components/ActivityFeed";
 import { MAP_CONFIG, WARDS_LIST } from "@/constants/config";
 import dynamicImport from "next/dynamic";
@@ -37,9 +40,253 @@ const InteractiveMap = dynamicImport(() => import("@/components/InteractiveMap")
     </div>
   ),
 });
+interface CounterProps {
+  value: number;
+  duration?: number;
+}
+
+function AnimatedCounter({ value, duration = 1200 }: CounterProps) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTimestamp: number | null = null;
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      setCount(Math.floor(progress * value));
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      }
+    };
+    window.requestAnimationFrame(step);
+  }, [value, duration]);
+
+  return <>{count.toLocaleString()}</>;
+}
+
+function RecentActivityFeed() {
+  const [events, setEvents] = useState([
+    { id: 1, text: "Vision Analysis Complete: Defect bounds calculated at 94% confidence.", time: "10s ago", icon: "center_focus_strong", color: "text-purple-400" },
+    { id: 2, text: "Duplicate Check Passed: No duplicates found within 200m radius.", time: "25s ago", icon: "copy_all", color: "text-amber-400" },
+    { id: 3, text: "Authority Assigned: Routed to Water Supply & Sewerage Board.", time: "42s ago", icon: "account_balance", color: "text-emerald-400" },
+    { id: 4, text: "Complaint Routed: Dispatch notice filed and compiled successfully.", time: "1m ago", icon: "send", color: "text-electric-blue" },
+    { id: 5, text: "Resolution Generated: Action plan blueprint generated via Gemini Engine.", time: "2m ago", icon: "auto_awesome", color: "text-cyan-400" }
+  ]);
+
+  useEffect(() => {
+    const list = [
+      { text: "Vision Analysis Complete: Defect bounds calculated at 94% confidence.", icon: "center_focus_strong", color: "text-purple-400" },
+      { text: "Duplicate Check Passed: No duplicates found within 200m radius.", icon: "copy_all", color: "text-amber-400" },
+      { text: "Authority Assigned: Routed to Water Supply & Sewerage Board.", icon: "account_balance", color: "text-emerald-400" },
+      { text: "Complaint Routed: Dispatch notice filed and compiled successfully.", icon: "send", color: "text-electric-blue" },
+      { text: "Resolution Generated: Action plan blueprint generated via Gemini Engine.", icon: "auto_awesome", color: "text-cyan-400" },
+      { text: "Vision Analysis Complete: Streetlight flickering pattern verified.", icon: "center_focus_strong", color: "text-purple-400" },
+      { text: "Duplicate Check Passed: Match found in Ward 4 database.", icon: "copy_all", color: "text-amber-400" },
+      { text: "Authority Assigned: Routed to BBMP Solid Waste Management.", icon: "account_balance", color: "text-emerald-400" },
+      { text: "Complaint Routed: Notice sent to Executive Engineer.", icon: "send", color: "text-electric-blue" },
+      { text: "Resolution Generated: Material & worker cost estimation updated.", icon: "auto_awesome", color: "text-cyan-400" }
+    ];
+
+    const interval = setInterval(() => {
+      setEvents((prev) => {
+        const nextIdx = Math.floor(Math.random() * list.length);
+        const newEvent = {
+          id: Date.now(),
+          text: list[nextIdx].text,
+          time: "Just now",
+          icon: list[nextIdx].icon,
+          color: list[nextIdx].color
+        };
+        const updated = [newEvent, ...prev.slice(0, 4)];
+        return updated.map((e, idx) => {
+          if (idx === 0) return e;
+          return { ...e, time: idx * 15 + "s ago" };
+        });
+      });
+    }, 6000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="glass-md p-5 rounded-2xl border border-white/5 space-y-4 shadow-lg">
+      <div className="flex items-center justify-between border-b border-white/5 pb-2">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Recent AI Activity</span>
+        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+      </div>
+      <div className="space-y-3 max-h-[300px] overflow-hidden">
+        <AnimatePresence initial={false}>
+          {events.map((e) => (
+            <motion.div
+              key={e.id}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.3 }}
+              className="flex gap-3 items-start bg-slate-950/20 p-2.5 rounded-xl border border-white/5 hover:border-white/10 transition-all overflow-hidden"
+            >
+              <span className={`material-symbols-outlined ${e.color} text-sm mt-0.5 shrink-0`}>
+                {e.icon}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-slate-300 leading-normal line-clamp-2">{e.text}</p>
+                <span className="text-[9px] text-slate-500 font-mono mt-1 block">{e.time}</span>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+
+const AI_ACTIVITIES = [
+  "Vision Analysis completed",
+  "Geo Verification completed",
+  "Duplicate Check completed",
+  "Authority Routing completed",
+  "Complaint Draft generated",
+  "Dashboard synchronized"
+];
+
+function RotatingRecentActivity() {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex((prev) => (prev + 1) % AI_ACTIVITIES.length);
+    }, 3500);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="h-8 flex items-center overflow-hidden">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={index}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center gap-2 text-cyan-400 font-mono text-xs font-bold bg-cyan-950/20 px-3 py-1.5 rounded-lg border border-cyan-500/10 shadow-sm shadow-cyan-500/5"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span>✓ {AI_ACTIVITIES[index]}</span>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function CivicEyeAIIntelligenceCenter({ reportsList, isDemoActive }: { reportsList: any[], isDemoActive: boolean }) {
+  const getHighestCategory = () => {
+    if (!reportsList || reportsList.length === 0) return "Awaiting incident data...";
+    const counts: Record<string, number> = {};
+    reportsList.forEach((r) => {
+      const cat = r.issue_type || r.category || "Pothole";
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    let maxCat = "";
+    let maxVal = 0;
+    Object.entries(counts).forEach(([cat, val]) => {
+      if (val > maxVal) {
+        maxVal = val;
+        maxCat = cat;
+      }
+    });
+    return maxCat ? `${maxCat} (${maxVal} incidents)` : "Awaiting incident data...";
+  };
+
+  const getMostRecentIncident = () => {
+    if (!reportsList || reportsList.length === 0) return "Awaiting incident data...";
+    const newest = reportsList[0];
+    return newest ? `${newest.issue_type} in ${newest.locality || "Unknown Locality"} (${newest.id})` : "Awaiting incident data...";
+  };
+
+  const getAssignedAuthority = () => {
+    if (!reportsList || reportsList.length === 0) return "Awaiting incident data...";
+    const newest = reportsList[0];
+    return newest ? (newest.authority || "Awaiting incident data...") : "Awaiting incident data...";
+  };
+
+  const getPipelineStatus = () => {
+    return isDemoActive ? "Active Orchestration Run" : "Nominal / Monitoring";
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+      className="glass-md p-6 md:p-8 rounded-3xl border border-white/5 shadow-2xl relative overflow-hidden group text-left"
+    >
+      {/* Decorative Glow */}
+      <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-2xl group-hover:bg-cyan-500/10 transition-all duration-700 pointer-events-none" />
+      
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <span className="material-symbols-outlined text-cyan-400 text-xl font-bold">
+          psychology
+        </span>
+        <h3 className="font-display text-sm font-extrabold text-white tracking-wider uppercase">
+          CivicEye AI Intelligence Center
+        </h3>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+        {/* Subsection 1: Latest AI Observation */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="space-y-4"
+        >
+          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/5 pb-2">
+            Latest AI Observation
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[
+              { label: "Highest Complaint Category", value: getHighestCategory() },
+              { label: "Most Recently Verified Incident", value: getMostRecentIncident() },
+              { label: "Assigned Municipal Authority", value: getAssignedAuthority() },
+              { label: "AI Pipeline Status", value: getPipelineStatus() }
+            ].map((obs, idx) => (
+              <div key={idx} className="flex flex-col gap-1 font-sans">
+                <span className="text-[9px] text-on-surface-variant uppercase tracking-wider font-bold opacity-60">
+                  {obs.label}
+                </span>
+                <span className={`text-[11px] font-semibold tracking-tight leading-normal ${obs.label === "AI Pipeline Status" && obs.value.includes("Active") ? "text-cyan-400" : "text-slate-200"}`}>
+                  {obs.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Subsection 2: Recent AI Activity */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.25 }}
+          className="space-y-4"
+        >
+          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/5 pb-2">
+            Recent AI Activity
+          </h4>
+          <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed mb-3">
+            Monitored pipeline activity across active municipal divisions. Updates in real-time.
+          </p>
+          <RotatingRecentActivity />
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { isDemoActive, isPaused, currentStep, reportId, exitDemo, scenario, setStep: setDemoStep } = useDemo();
 
   // Navigation state
   const [activeTab, setActiveTab] = useState<"overview" | "operations" | "copilot">("overview");
@@ -88,7 +335,7 @@ export default function DashboardPage() {
   const [copilotMessages, setCopilotMessages] = useState<any[]>([
     {
       role: "model",
-      content: "Welcome, Operations Director. I am your Municipal Intelligence Copilot. Ask me questions about today's dispatches, overloaded departments, cost estimates, or active safety risks."
+      content: "Welcome, Operations Director. I am your Municipal Operations Copilot. Query the active reports database for statistical overview, priority routing analysis, keyword search, or action recommendations."
     }
   ]);
   const [chatLoading, setChatLoading] = useState(false);
@@ -107,9 +354,30 @@ export default function DashboardPage() {
       const res = await fetch("/api/reports");
       if (res.ok) {
         const data = await res.json();
-        setReportsList(data);
-        // Sync to client local storage for redundancy
-        localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(data)));
+        if (isDemoActive) {
+          const localListRaw = localStorage.getItem("reports_list");
+          if (localListRaw) {
+            const localList = JSON.parse(localListRaw);
+            setReportsList(localList);
+            const demoReport = localList.find((r: any) => r.id === reportId);
+            if (demoReport && demoReport.latitude && demoReport.longitude) {
+              setMapCenter([demoReport.latitude, demoReport.longitude]);
+              setMapZoom(16);
+            }
+          } else {
+            setReportsList(data);
+          }
+        } else {
+          setReportsList(data);
+          if (data && data.length > 0) {
+            const firstWithCoords = data.find((r: any) => r.latitude !== undefined && r.latitude !== null && r.longitude !== undefined && r.longitude !== null);
+            if (firstWithCoords) {
+              setMapCenter([firstWithCoords.latitude, firstWithCoords.longitude]);
+            }
+          }
+          // Sync to client local storage for redundancy
+          safeSetLocalStorageItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(data)));
+        }
       } else {
         loadFromLocalStorage();
       }
@@ -125,7 +393,14 @@ export default function DashboardPage() {
     try {
       const localListRaw = localStorage.getItem("reports_list");
       if (localListRaw) {
-        setReportsList(JSON.parse(localListRaw));
+        const data = JSON.parse(localListRaw);
+        setReportsList(data);
+        if (data && data.length > 0) {
+          const firstWithCoords = data.find((r: any) => r.latitude !== undefined && r.latitude !== null && r.longitude !== undefined && r.longitude !== null);
+          if (firstWithCoords) {
+            setMapCenter([firstWithCoords.latitude, firstWithCoords.longitude]);
+          }
+        }
       } else {
         setReportsList([]);
       }
@@ -136,9 +411,38 @@ export default function DashboardPage() {
 
   // Initial fetch on mount
   useEffect(() => {
-    cleanAllLocalStorageReports();
+    if (!isDemoActive) {
+      cleanAllLocalStorageReports();
+    }
     fetchReports();
-  }, []);
+  }, [isDemoActive]);
+
+  // Demo Mode Automation for Dashboard
+  useEffect(() => {
+    if (!isDemoActive || isPaused || reportsList.length === 0) return;
+
+    if (currentStep === 4) {
+      // 1. Automatically switch to operations tab so the table row is visible
+      setActiveTab("operations");
+
+      // 2. Find the demo report to center map and apply highlight
+      const demoReport = reportsList.find((r) => r.id === reportId);
+      if (demoReport && demoReport.latitude && demoReport.longitude) {
+        setMapCenter([demoReport.latitude, demoReport.longitude]);
+        setMapZoom(16);
+      }
+
+      // 3. Trigger toast notification
+      triggerToast("✓ Operations Dashboard Updated");
+
+      // 4. Wait 4 seconds, then set currentStep to 5 (Completed) to trigger Completion Panel
+      const timer = setTimeout(() => {
+        setDemoStep(5);
+      }, 4500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isDemoActive, isPaused, currentStep, reportsList, reportId]);
 
   // Fetch Copilot Brief when switching to Copilot tab
   useEffect(() => {
@@ -284,6 +588,10 @@ export default function DashboardPage() {
     setInternalNotes(report.internal_notes || "");
     setReportStatus(report.status || "Investigating");
     setIsDrawerOpen(true);
+    if (report.latitude !== undefined && report.latitude !== null && report.longitude !== undefined && report.longitude !== null) {
+      setMapCenter([report.latitude, report.longitude]);
+      setMapZoom(16);
+    }
   };
 
   // Submit Work Order Drawer Updates
@@ -364,22 +672,46 @@ export default function DashboardPage() {
       const res = await fetch("/api/municipal-copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: userQuery }),
+        body: JSON.stringify({ query: userQuery, history: copilotMessages }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setCopilotMessages((prev) => [...prev, { role: "model", content: data.content }]);
+        setCopilotMessages((prev) => [...prev, { role: "model", content: data }]);
       } else {
         setCopilotMessages((prev) => [
           ...prev,
-          { role: "model", content: "Error contacting municipal copilot core engine. Please check connections." }
+          {
+            role: "model",
+            content: {
+              title: "Connection Alert",
+              query: userQuery,
+              overview: "Error contacting municipal copilot core engine.",
+              findings: ["Please check your connection settings and try again."],
+              recommendation: "Ensure local node servers are up and active.",
+              matchingReports: [],
+              totalReportsCount: 0,
+              followUps: []
+            }
+          }
         ]);
       }
     } catch {
       setCopilotMessages((prev) => [
         ...prev,
-        { role: "model", content: "Failed to connect to the intelligence system." }
+        {
+          role: "model",
+          content: {
+            title: "Connection Error",
+            query: userQuery,
+            overview: "Failed to connect to the intelligence system.",
+            findings: ["A network timeout occurred while waiting for operations response."],
+            recommendation: "Ensure the local development server or API endpoint is operational.",
+            matchingReports: [],
+            totalReportsCount: 0,
+            followUps: []
+          }
+        }
       ]);
     } finally {
       setChatLoading(false);
@@ -488,46 +820,74 @@ export default function DashboardPage() {
         <div className="space-y-12 animate-entrance">
           {/* Hero Metrics section */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-            {/* Radial Gauge Card */}
-            <div className="lg:col-span-4 glass-lg p-8 rounded-3xl shimmer-border flex flex-col items-center justify-center space-y-6 text-center shadow-2xl relative">
-              <div className="relative w-48 h-48">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                  <circle
-                    className="text-white/5"
-                    cx="50"
-                    cy="50"
-                    fill="transparent"
-                    r="45"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                  />
-                  <circle
-                    className="text-electric-blue transition-all duration-300 ease-out"
-                    cx="50"
-                    cy="50"
-                    fill="transparent"
-                    r="45"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    strokeDasharray="283"
-                    strokeDashoffset={strokeOffset}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="font-display text-5xl font-bold text-white tracking-tighter">
-                    {healthScore}
-                  </span>
-                  <span className="font-display text-[10px] text-electric-blue uppercase tracking-widest font-bold mt-1">
-                    Health Index
-                  </span>
+            {/* Left Column: Radial Gauge + AI System Status */}
+            <div className="lg:col-span-4 flex flex-col gap-4">
+              {/* Radial Gauge Card */}
+              <div className="glass-lg p-8 rounded-3xl shimmer-border flex flex-col items-center justify-center space-y-6 text-center shadow-2xl relative flex-1">
+                <div className="relative w-48 h-48">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle
+                      className="text-white/5"
+                      cx="50"
+                      cy="50"
+                      fill="transparent"
+                      r="45"
+                      stroke="currentColor"
+                      strokeWidth="8"
+                    />
+                    <circle
+                      className="text-electric-blue transition-all duration-300 ease-out"
+                      cx="50"
+                      cy="50"
+                      fill="transparent"
+                      r="45"
+                      stroke="currentColor"
+                      strokeWidth="8"
+                      strokeDasharray="283"
+                      strokeDashoffset={strokeOffset}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="font-display text-5xl font-bold text-white tracking-tighter">
+                      {healthScore}
+                    </span>
+                    <span className="font-display text-[10px] text-electric-blue uppercase tracking-widest font-bold mt-1">
+                      Health Index
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h2 className="font-display text-2xl font-bold text-white mb-2">Stable Pulse</h2>
+                  <p className="text-on-surface-variant text-xs max-w-xs leading-relaxed font-medium">
+                    Regional infrastructure sensor nodes report a stable index loop for 14 continuous days.
+                  </p>
                 </div>
               </div>
-              <div>
-                <h2 className="font-display text-2xl font-bold text-white mb-2">Stable Pulse</h2>
-                <p className="text-on-surface-variant text-xs max-w-xs leading-relaxed font-medium">
-                  Regional infrastructure sensor nodes report a stable index loop for 14 continuous days.
-                </p>
+
+              {/* AI System Status Card */}
+              <div className="glass-md p-6 rounded-3xl border border-white/5 shadow-xl hover:translate-y-[-2px] hover:shadow-electric-blue/5 hover:border-electric-blue/10 transition-all flex flex-col justify-between group">
+                <div className="flex items-center gap-2.5 mb-4">
+                  <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]" />
+                  <h3 className="font-display text-xs font-bold text-white uppercase tracking-wider font-mono">AI System Status</h3>
+                </div>
+                <div className="space-y-3 font-mono text-[11px] text-on-surface-variant">
+                  {[
+                    { name: "Vision Agent", status: "Operational" },
+                    { name: "Priority Engine", status: "Operational" },
+                    { name: "Routing Engine", status: "Operational" },
+                    { name: "Duplicate Engine", status: "Operational" },
+                    { name: "Complaint Generator", status: "Operational" }
+                  ].map((sys, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-slate-950/20 px-3 py-1.5 rounded-lg border border-white/5 hover:border-white/10 hover:bg-slate-950/40 transition-all">
+                      <span className="text-slate-300 font-semibold">{sys.name}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-emerald-400 font-bold uppercase text-[9px] tracking-wide">{sys.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -546,7 +906,7 @@ export default function DashboardPage() {
                 <div>
                   <span className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider block">Total Reports Mapped</span>
                   <h3 className="font-display text-3xl md:text-4xl font-extrabold text-white mt-2 tracking-tight">
-                    {totalReports.toLocaleString()}
+                    <AnimatedCounter value={totalReports} />
                   </h3>
                 </div>
                 <div className="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
@@ -567,7 +927,7 @@ export default function DashboardPage() {
                 <div>
                   <span className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider block">Resolved Cases</span>
                   <h3 className="font-display text-3xl md:text-4xl font-extrabold text-white mt-2 tracking-tight">
-                    {resolvedCases.toLocaleString()}
+                    <AnimatedCounter value={resolvedCases} />
                   </h3>
                 </div>
                 <div className="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
@@ -588,8 +948,8 @@ export default function DashboardPage() {
                 <div>
                   <span className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider block">Average Action Time</span>
                   <h3 className="font-display text-3xl font-extrabold text-white mt-2 tracking-tight flex items-baseline">
-                    {avgResponseM}<span className="text-lg font-medium ml-0.5 mr-2">m</span>
-                    {avgResponseS}<span className="text-lg font-medium ml-0.5">s</span>
+                    <AnimatedCounter value={avgResponseM} /><span className="text-lg font-medium ml-0.5 mr-2">m</span>
+                    <AnimatedCounter value={avgResponseS} /><span className="text-lg font-medium ml-0.5">s</span>
                   </h3>
                 </div>
                 <div className="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
@@ -608,7 +968,7 @@ export default function DashboardPage() {
                 <div>
                   <span className="text-on-surface-variant text-xs font-semibold uppercase tracking-wider block">Active Watchdogs</span>
                   <h3 className="font-display text-3xl md:text-4xl font-extrabold text-white mt-2 tracking-tight">
-                    {activeAgents}
+                    <AnimatedCounter value={activeAgents} />
                   </h3>
                 </div>
                 <div className="mt-4 flex items-center -space-x-2 shrink-0">
@@ -623,23 +983,30 @@ export default function DashboardPage() {
 
           {/* Map + Activity Feed Grid */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Map Container */}
-            <div className="lg:col-span-8 glass-md rounded-3xl overflow-hidden border border-white/5 h-[560px] relative z-0">
-              <InteractiveMap
-                center={mapCenter}
-                zoom={mapZoom}
-                markers={reportsList}
-              />
-              
-              {/* Map Header Overlay */}
-              <div className="absolute top-6 left-6 z-10 pointer-events-none">
-                <div className="glass-lg px-4 py-2 rounded-full flex items-center gap-2 border border-white/10 shadow-lg bg-slate-950/80 backdrop-blur-md">
-                  <span className="w-2 h-2 rounded-full bg-electric-blue animate-ping" />
-                  <span className="text-white font-mono text-[10px] font-bold uppercase tracking-wider">
-                    Geofence: {reportsList.filter(r => r.latitude !== undefined && r.latitude !== null).length} Active Incidents
-                  </span>
+            {/* Map Column */}
+            <div className="lg:col-span-8 space-y-6">
+              {/* Map Container */}
+              <div className="glass-md rounded-3xl overflow-hidden border border-white/5 h-[560px] relative z-0">
+                <InteractiveMap
+                  center={mapCenter}
+                  zoom={mapZoom}
+                  markers={reportsList}
+                  selectedId={selectedReport?.id}
+                />
+                
+                {/* Map Header Overlay */}
+                <div className="absolute top-6 left-6 z-10 pointer-events-none">
+                  <div className="glass-lg px-4 py-2 rounded-full flex items-center gap-2 border border-white/10 shadow-lg bg-slate-950/80 backdrop-blur-md">
+                    <span className="w-2 h-2 rounded-full bg-electric-blue animate-ping" />
+                    <span className="text-white font-mono text-[10px] font-bold uppercase tracking-wider">
+                      Geofence: {reportsList.filter(r => r.latitude !== undefined && r.latitude !== null).length} Active Incidents
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {/* CivicEye AI Intelligence Center */}
+              <CivicEyeAIIntelligenceCenter reportsList={reportsList} isDemoActive={isDemoActive} />
             </div>
 
             {/* Live Feed Sidebar */}
@@ -652,6 +1019,7 @@ export default function DashboardPage() {
                   Live Issue Feed
                 </h2>
               </div>
+              <RecentActivityFeed />
               <div className="max-h-[500px] overflow-y-auto pr-1 terminal-scroll">
                 <ActivityFeed reports={reportsList} />
               </div>
@@ -700,10 +1068,10 @@ export default function DashboardPage() {
                   onChange={(e) => setSelectedWard(e.target.value)}
                   className="bg-transparent border-none text-xs text-white outline-none cursor-pointer pr-4"
                 >
-                  <option value="All" className="bg-slate-900">All Wards</option>
-                  {WARDS_LIST.map((w, idx) => (
-                    <option key={idx} value={w} className="bg-slate-900">
-                      {w}
+                  <option value="All" className="bg-slate-900">All Civic Jurisdictions</option>
+                  {Array.from(new Set(reportsList.map((r) => r.ward).filter(Boolean))).map((w, idx) => (
+                    <option key={idx} value={w as string} className="bg-slate-900">
+                      {w as string}
                     </option>
                   ))}
                 </select>
@@ -796,7 +1164,11 @@ export default function DashboardPage() {
                     filteredReports.map((report) => (
                       <tr
                         key={report.id}
-                        className="hover:bg-white/[0.02] transition-colors cursor-pointer group"
+                        className={`hover:bg-white/[0.02] transition-colors cursor-pointer group ${
+                          isDemoActive && report.id === reportId
+                            ? "ring-2 ring-electric-blue bg-electric-blue/5 animate-pulse"
+                            : ""
+                        }`}
                         onClick={() => {
                           openDrawer(report);
                           if (report.latitude && report.longitude) {
@@ -818,8 +1190,8 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-100">{report.issue_type}</span>
                             {report.supporter_count && report.supporter_count > 0 ? (
-                              <span className="bg-electric-blue/10 text-electric-blue border border-electric-blue/25 text-[9px] px-1.5 py-0.5 rounded font-bold font-mono">
-                                +{report.supporter_count} Supports
+                              <span className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 text-[9px] px-1.5 py-0.5 rounded font-bold font-mono">
+                                {report.supporter_count > 1 ? "Community Validated" : `+${report.supporter_count} Support`}
                               </span>
                             ) : null}
                           </div>
@@ -829,7 +1201,9 @@ export default function DashboardPage() {
                         </td>
                         <td className="p-4 space-y-1">
                           <span className="text-slate-200 block truncate font-medium">{report.locality}</span>
-                          <span className="text-[10px] text-on-surface-variant/80 block font-mono">{report.ward}</span>
+                          <span className="text-[10px] text-on-surface-variant/80 block font-mono">
+                            {(report.ward || "").startsWith("Ward ") ? `BBMP ${report.ward}` : (report.ward || "Unknown")}
+                          </span>
                         </td>
                         <td className="p-4">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded border inline-block ${getSeverityBadgeClass(report.severity || report.priority)}`}>
@@ -1086,7 +1460,7 @@ export default function DashboardPage() {
             <div className="p-4 bg-slate-900/70 border-b border-white/5 flex items-center gap-2">
               <Bot className="h-5 w-5 text-electric-blue" />
               <div>
-                <span className="text-xs font-bold text-white block">Municipal Copilot Chat</span>
+                <span className="text-xs font-bold text-white block">Municipal Operations Copilot</span>
                 <span className="text-[10px] text-on-surface-variant font-mono">Active Database Schema Context</span>
               </div>
             </div>
@@ -1110,7 +1484,110 @@ export default function DashboardPage() {
                       ? "bg-electric-blue text-background border-electric-blue/15 font-semibold"
                       : "bg-slate-900/60 border-white/5 text-slate-200"
                   }`}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {typeof msg.content === "object" ? (
+                      <div className="space-y-4 text-slate-200 font-sans text-left">
+                        {/* Header & Title */}
+                        <div className="border-b border-white/5 pb-2">
+                          <div className="flex items-center gap-1.5 text-cyan-400 font-mono text-[9px] font-bold uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+                            {msg.content.title || "Municipal Operations Summary"}
+                          </div>
+                          {msg.content.query && (
+                            <div className="text-[9px] text-slate-400 font-mono mt-1 italic">
+                              Query: &quot;{msg.content.query}&quot;
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Quick Overview */}
+                        <div className="space-y-1 bg-slate-950/20 p-2.5 rounded-xl border border-white/5">
+                          <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest font-mono block">Quick Overview</span>
+                          <p className="text-[11px] font-medium leading-relaxed">{msg.content.overview}</p>
+                        </div>
+
+                        {/* Key Findings */}
+                        {msg.content.findings && msg.content.findings.length > 0 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest font-mono block">Key Findings</span>
+                            <ul className="space-y-1 list-none pl-0">
+                              {msg.content.findings.map((f: string, fIdx: number) => (
+                                <li key={fIdx} className="flex gap-2 items-start text-[11px] leading-relaxed">
+                                  <span className="text-cyan-400 text-xs mt-0.5 shrink-0">•</span>
+                                  <span>{f}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Recommended Action */}
+                        {msg.content.recommendation && (
+                          <div className="space-y-1 bg-cyan-950/20 p-2.5 rounded-xl border border-cyan-500/10 shadow-sm shadow-cyan-500/5">
+                            <span className="text-[9px] text-cyan-400 uppercase font-bold tracking-widest font-mono block">Recommended Action</span>
+                            <p className="text-[11px] leading-relaxed text-slate-300">{msg.content.recommendation}</p>
+                          </div>
+                        )}
+
+                        {/* Matching Reports */}
+                        {msg.content.matchingReports && msg.content.matchingReports.length > 0 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest font-mono block">Matching Reports</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {msg.content.matchingReports.slice(0, 3).map((repId: string) => {
+                                const reportObj = reportsList.find(r => r.id === repId);
+                                return (
+                                  <button
+                                    key={repId}
+                                    type="button"
+                                    onClick={() => {
+                                      if (reportObj) {
+                                        openDrawer(reportObj);
+                                        if (reportObj.latitude && reportObj.longitude) {
+                                          setMapCenter([reportObj.latitude, reportObj.longitude]);
+                                          setMapZoom(16);
+                                        }
+                                      }
+                                    }}
+                                    className="px-2 py-1 bg-slate-900 border border-white/5 hover:border-cyan-500/30 hover:bg-slate-950/60 rounded-md text-[10px] font-mono text-cyan-400 font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                  >
+                                    <span>{repId}</span>
+                                    <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+                                  </button>
+                                );
+                              })}
+                              {msg.content.totalReportsCount > 3 && (
+                                <span className="text-[10px] text-slate-500 font-mono self-center ml-1">
+                                  +{msg.content.totalReportsCount - 3} more reports available
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Suggested Follow-Ups */}
+                        {msg.content.followUps && msg.content.followUps.length > 0 && (
+                          <div className="space-y-1.5 pt-2 border-t border-white/5">
+                            <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest font-mono block">Anything Else?</span>
+                            <div className="flex flex-col gap-1.5">
+                              {msg.content.followUps.map((tag: string, tIdx: number) => (
+                                <button
+                                  key={tIdx}
+                                  type="button"
+                                  onClick={() => {
+                                    setCopilotInput(tag);
+                                  }}
+                                  className="text-left w-fit px-2.5 py-1.5 bg-slate-950/40 border border-white/5 hover:border-cyan-500/20 hover:bg-slate-950/80 rounded-lg text-[10px] text-slate-400 hover:text-cyan-400 transition-all font-medium active:scale-[0.98] cursor-pointer"
+                                >
+                                  • {tag}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1374,6 +1851,89 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Workflow Completion Panel Overlay */}
+      <AnimatePresence>
+        {isDemoActive && currentStep === 5 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="max-w-md w-full glass-lg border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col gap-6 text-center"
+            >
+              <div className="space-y-2">
+                <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/25 rounded-full flex items-center justify-center mx-auto text-emerald-400">
+                  <Check className="h-8 w-8" />
+                </div>
+                <h3 className="font-display text-2xl font-extrabold text-white tracking-tight mt-4">
+                  Workflow Completed Successfully
+                </h3>
+                <p className="text-xs text-slate-400 font-medium">
+                  CivicEye AI has successfully transformed the citizen report into an actionable municipal work order.
+                </p>
+              </div>
+
+              {/* Checklist */}
+              <div className="bg-slate-900/40 border border-white/5 rounded-2xl p-4 text-left space-y-2.5 font-mono text-[10px] text-slate-300">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>Citizen Report Submitted ({scenario?.label})</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>AI Vision Analysis Completed</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>AI Orchestration Finished</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>Complaint Generated (is_demo safe)</span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>Operations Dashboard Updated</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    exitDemo();
+                  }}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-sm transition-all"
+                >
+                  Explore Freely
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    exitDemo();
+                    router.push("/report");
+                  }}
+                  className="w-full py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-xl text-sm font-semibold transition-all"
+                >
+                  Report Your Own Issue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    exitDemo();
+                    router.push("/");
+                  }}
+                  className="w-full py-3 text-slate-400 hover:text-white text-xs font-semibold hover:underline transition-all"
+                >
+                  Return Home
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

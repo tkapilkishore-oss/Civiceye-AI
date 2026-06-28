@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Camera,
   Upload,
   ChevronRight,
   X,
@@ -15,8 +14,9 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { AnalyzeImageResponse, GenerateReportResponse } from "@/types";
-import { MAP_CONFIG, WARDS_LIST, deriveWardFromAddress } from "@/constants/config";
-import { sanitizeReportForLocalStorage, sanitizeReportsListForLocalStorage } from "@/lib/storageHelper";
+import { MAP_CONFIG, deriveWardFromAddress } from "@/constants/config";
+import { sanitizeReportForLocalStorage, sanitizeReportsListForLocalStorage, safeSetLocalStorageItem } from "@/lib/storageHelper";
+import { useDemo } from "@/components/DemoProvider";
 import dynamicImport from "next/dynamic";
 
 const InteractiveMap = dynamicImport(() => import("@/components/InteractiveMap"), {
@@ -26,6 +26,7 @@ const InteractiveMap = dynamicImport(() => import("@/components/InteractiveMap")
 
 export default function ReportPage() {
   const router = useRouter();
+  const { isDemoActive, isPaused, scenario, setStep: setDemoStep, setReportId, showTransitionAlert, pauseDemo, moveCursorTo, moveCursorToCoords, clickElement, scrollIntoViewIfNeeded } = useDemo();
 
   // State Machine: "camera" | "details" | "analyzing_image" | "duplicate_check" | "questions" | "generating_report"
   const [step, setStep] = useState<
@@ -40,11 +41,9 @@ export default function ReportPage() {
   const [duplicateReport, setDuplicateReport] = useState<any | null>(null);
 
   // Camera & Image State
-  const [hasCamera, setHasCamera] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const geocodeCache = useRef<Record<string, any>>({});
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Form inputs
   const [description, setDescription] = useState("");
@@ -63,7 +62,7 @@ export default function ReportPage() {
   const [mapZoom, setMapZoom] = useState(MAP_CONFIG.defaultZoom);
 
   // Derived/Configured Ward and detailed address components
-  const [selectedWard, setSelectedWard] = useState("Unknown / Unable to Determine");
+  const [selectedWard, setSelectedWard] = useState("Pending Location Selection");
   const [formattedAddress, setFormattedAddress] = useState("");
   const [city, setCity] = useState("");
   const [stateName, setStateName] = useState("");
@@ -86,12 +85,235 @@ export default function ReportPage() {
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [isLocalityManuallyEdited, setIsLocalityManuallyEdited] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [localityError, setLocalityError] = useState<string | null>(null);
 
   // Judge Demo state variables
   const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [demoAutoplayState, setDemoAutoplayState] = useState<"idle" | "moving_to_name" | "typing_name" | "moving_to_contact" | "typing_contact" | "moving_to_location" | "typing_location" | "waiting_geocoder" | "moving_to_description" | "typing_description" | "moving_to_analyze" | "waiting_analyze" | "submitting" | "done">("idle");
 
+  // Automated Demo Flow
+  useEffect(() => {
+    if (!isDemoActive || isPaused) return;
 
-  const wardsList = WARDS_LIST;
+    // 1. Camera step: load demo scenario
+    if (step === "camera") {
+      const timer = setTimeout(() => {
+        handleLoadDemo(scenario.type as any);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+
+    // 2. Details step: type naturally coordinated with virtual cursor
+    if (step === "details" && capturedImage) {
+      if (demoAutoplayState === "idle") {
+        setDemoAutoplayState("moving_to_name");
+        return;
+      }
+
+      if (demoAutoplayState === "moving_to_name") {
+        const prepare = async () => {
+          await moveCursorTo(".demo-name-input", 1200);
+          await clickElement(".demo-name-input");
+          setDemoAutoplayState("typing_name");
+        };
+        prepare();
+        return;
+      }
+
+      if (demoAutoplayState === "typing_name") {
+        const target = scenario.citizenName;
+        let current = "";
+        const speed = 2000 / target.length; // target ~2 seconds
+        const interval = setInterval(() => {
+          if (current.length < target.length) {
+            current = target.slice(0, current.length + 1);
+            setCitizenName(current);
+            setNameError(null);
+          } else {
+            clearInterval(interval);
+            setDemoAutoplayState("moving_to_contact");
+          }
+        }, speed);
+        return () => clearInterval(interval);
+      }
+
+      if (demoAutoplayState === "moving_to_contact") {
+        const prepare = async () => {
+          await moveCursorTo(".demo-contact-input", 1200);
+          await clickElement(".demo-contact-input");
+          setDemoAutoplayState("typing_contact");
+        };
+        prepare();
+        return;
+      }
+
+      if (demoAutoplayState === "typing_contact") {
+        const target = scenario.contact;
+        let current = "";
+        const speed = 2000 / target.length; // target ~2 seconds
+        const interval = setInterval(() => {
+          if (current.length < target.length) {
+            current = target.slice(0, current.length + 1);
+            setContactInfo(current);
+            setPhoneError(null);
+          } else {
+            clearInterval(interval);
+            setIsLocalityManuallyEdited(true);
+            setDemoAutoplayState("moving_to_location");
+          }
+        }, speed);
+        return () => clearInterval(interval);
+      }
+
+      if (demoAutoplayState === "moving_to_location") {
+        const prepare = async () => {
+          await moveCursorTo(".demo-locality-input", 1200);
+          await clickElement(".demo-locality-input");
+          setDemoAutoplayState("typing_location");
+        };
+        prepare();
+        return;
+      }
+
+      if (demoAutoplayState === "typing_location") {
+        const target = scenario.location;
+        let current = "";
+        const speed = 2000 / target.length; // target ~2 seconds
+        const interval = setInterval(() => {
+          if (current.length < target.length) {
+            current = target.slice(0, current.length + 1);
+            setLocality(current);
+            setLocalityError(null);
+          } else {
+            clearInterval(interval);
+            setDemoAutoplayState("waiting_geocoder");
+          }
+        }, speed);
+        return () => clearInterval(interval);
+      }
+
+      if (demoAutoplayState === "moving_to_description") {
+        const prepare = async () => {
+          const el = document.querySelector(".demo-description-input") as HTMLElement;
+          if (el) {
+            await scrollIntoViewIfNeeded(el, 1200);
+          }
+          await moveCursorTo(".demo-description-input", 1200);
+          await clickElement(".demo-description-input");
+          setDemoAutoplayState("typing_description");
+        };
+        prepare();
+        return;
+      }
+
+      if (demoAutoplayState === "typing_description") {
+        const target = scenario.description;
+        let current = "";
+        const speed = 3000 / target.length; // target ~3 seconds
+        const interval = setInterval(() => {
+          if (current.length < target.length) {
+            current = target.slice(0, current.length + 1);
+            setDescription(current);
+          } else {
+            clearInterval(interval);
+            setDemoAutoplayState("moving_to_analyze");
+          }
+        }, speed);
+        return () => clearInterval(interval);
+      }
+
+      if (demoAutoplayState === "moving_to_analyze") {
+        const prepare = async () => {
+          await moveCursorTo(".demo-analyze-button", 1200);
+          setDemoAutoplayState("waiting_analyze");
+        };
+        prepare();
+        return;
+      }
+
+      if (demoAutoplayState === "waiting_analyze") {
+        const timer = setTimeout(async () => {
+          setDemoAutoplayState("submitting");
+          await clickElement(".demo-analyze-button");
+          // Move cursor to empty side section before triggering analysis
+          await moveCursorToCoords(window.innerWidth - 150, 300, 1000);
+          submitToVisionAgent();
+        }, 2000); // 2 seconds pause before clicking Analyze
+        return () => clearTimeout(timer);
+      }
+    }
+
+    // 3. Duplicate check warning step
+    if (step === "duplicate_check" && duplicateReport) {
+      const execute = async () => {
+        await moveCursorTo(".demo-support-merge-button", 1200);
+        const timer = setTimeout(async () => {
+          await clickElement(".demo-support-merge-button");
+          await moveCursorToCoords(window.innerWidth - 150, 300, 800);
+          handleSupportDuplicate();
+        }, 1800); // ~3 seconds total pause on duplicate dialog (1.2s travel + 1.8s pause)
+      };
+      execute();
+      return;
+    }
+
+    // 4. Follow up questions step
+    if (step === "questions" && analysis) {
+      if (Object.keys(answers).length === 0) {
+        const targetAnswers: Record<string, string> = {};
+        analysis.follow_up_questions.forEach((q) => {
+          const predefined = scenario.answers.find(a => q.toLowerCase().includes(a.question.toLowerCase()) || a.question.toLowerCase().includes(q.toLowerCase()));
+          targetAnswers[q] = predefined ? predefined.answer : "Yes, verified.";
+        });
+        setAnswers(targetAnswers);
+      } else {
+        const timer = setTimeout(() => {
+          submitToDecisionAgent();
+        }, 1500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isDemoActive, isPaused, step, capturedImage, demoAutoplayState, scenario, analysis, answers]);
+
+  // Geocoder resolver watcher effect
+  useEffect(() => {
+    if (!isDemoActive || isPaused || demoAutoplayState !== "waiting_geocoder") return;
+
+    const resolved = latitude !== undefined &&
+                     longitude !== undefined &&
+                     selectedWard !== "Pending Location Selection" &&
+                     locationResolvingState !== "Resolving location..." &&
+                     locationResolvingState !== "Resolving Jurisdiction...";
+    
+    if (resolved) {
+      const timer = setTimeout(async () => {
+        // Move cursor back to empty area before typing next section
+        await moveCursorToCoords(window.innerWidth - 150, 300, 1000);
+        setDemoAutoplayState("moving_to_description");
+      }, 2000); // 2 seconds wait after map rendering resolves
+      return () => clearTimeout(timer);
+    }
+  }, [isDemoActive, isPaused, demoAutoplayState, latitude, longitude, selectedWard, locationResolvingState]);
+
+  // Global manual interaction pause
+  useEffect(() => {
+    if (!isDemoActive || isPaused) return;
+    const handleUserInteraction = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.closest("button"))) {
+        if (!target.closest(".fixed")) {
+          pauseDemo();
+          console.log("Demo paused due to manual user interaction");
+        }
+      }
+    };
+    window.addEventListener("focusin", handleUserInteraction);
+    window.addEventListener("click", handleUserInteraction);
+    return () => {
+      window.removeEventListener("focusin", handleUserInteraction);
+      window.removeEventListener("click", handleUserInteraction);
+    };
+  }, [isDemoActive, isPaused]);
 
   const categories = [
     { name: "Pothole", icon: "error" },
@@ -102,50 +324,37 @@ export default function ReportPage() {
     { name: "Fallen Trees", icon: "nature" },
   ];
 
-  // Check if camera device is available
-  useEffect(() => {
-    if (typeof window !== "undefined" && navigator.mediaDevices) {
-      navigator.mediaDevices
-        .enumerateDevices()
-        .then((devices) => {
-          const videoDevices = devices.filter((d) => d.kind === "videoinput");
-          setHasCamera(videoDevices.length > 0);
-        })
-        .catch((err) => console.log("Error enumerating devices:", err));
-    }
-  }, []);
+  // Camera stream cleanup (if any)
 
-  // Cleanup camera stream
-  useEffect(() => {
-    return () => {
-      stopCamera();
-    };
-  }, []);
 
-  // Initialize coordinates to default center and trigger geocoding
-  useEffect(() => {
-    if (latitude === undefined || longitude === undefined) {
-      setLatitude(MAP_CONFIG.defaultCenter[0]);
-      setLongitude(MAP_CONFIG.defaultCenter[1]);
-      setMapCenter(MAP_CONFIG.defaultCenter);
-    }
-  }, []);
-
-  // Run reverse geocoding on coordinates load
-  useEffect(() => {
-    if (latitude && longitude && !formattedAddress) {
-      runReverseGeocoding(latitude, longitude);
-    }
-  }, [latitude, longitude]);
 
   // Reverse geocoding worker
   const runReverseGeocoding = async (lat: number, lng: number, forceOverwrite = false) => {
+    const cacheKey = `rev_${lat.toFixed(6)}_${lng.toFixed(6)}`;
+    if (geocodeCache.current[cacheKey]) {
+      console.log("Reverse geocoding cache hit for:", lat, lng);
+      const cached = geocodeCache.current[cacheKey];
+      setFormattedAddress(cached.display_name);
+      if (!isLocalityManuallyEdited || forceOverwrite) {
+        setLocality(cached.locality || locality);
+      }
+      setCity(cached.city);
+      setStateName(cached.state);
+      setPostalCode(cached.postcode);
+      setSelectedWard(cached.ward);
+      
+      const status = cached.ward && cached.ward !== "Unknown / Unable to Determine"
+        ? (cached.ward.startsWith("Ward ") ? "Ward Resolved" : "Jurisdiction Resolved")
+        : "Location Resolved";
+      setLocationResolvingState(status);
+      setTimeout(() => setLocationResolvingState(null), 1000);
+      return;
+    }
+
     try {
       setLocationResolvingState("Resolving location...");
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-      const res = await fetch(url, {
-        headers: { "User-Agent": "CivicEyeAI-Hackathon-App" }
-      });
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setFormattedAddress(data.display_name || "");
@@ -164,8 +373,49 @@ export default function ReportPage() {
         setPostalCode(extractedPostcode);
         
         const derivedWard = deriveWardFromAddress(addr);
-        setSelectedWard(derivedWard);
-        setLocationResolvingState("Ward Resolved");
+        let finalWard = derivedWard;
+        if (derivedWard === "Unknown / Unable to Determine") {
+          try {
+            setLocationResolvingState("Resolving Jurisdiction...");
+            const jRes = await fetch("/api/resolve-jurisdiction", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                locality: extractedLocality || locality,
+                city: extractedCity,
+                state: extractedState,
+                postcode: extractedPostcode,
+                formattedAddress: data.display_name || ""
+              })
+            });
+            if (jRes.ok) {
+              const jData = await jRes.json();
+              finalWard = jData.jurisdiction;
+              setSelectedWard(jData.jurisdiction);
+              setLocationResolvingState("Jurisdiction Resolved");
+            } else {
+              setSelectedWard("Unknown / Unable to Determine");
+              setLocationResolvingState(null);
+            }
+          } catch (e) {
+            console.error("Jurisdiction fetch error:", e);
+            setSelectedWard("Unknown / Unable to Determine");
+            setLocationResolvingState(null);
+          }
+        } else {
+          setSelectedWard(derivedWard);
+          setLocationResolvingState("Ward Resolved");
+        }
+
+        geocodeCache.current[cacheKey] = {
+          display_name: data.display_name || "",
+          locality: extractedLocality,
+          city: extractedCity,
+          state: extractedState,
+          postcode: extractedPostcode,
+          ward: finalWard
+        };
+
         setTimeout(() => setLocationResolvingState(null), 1000);
       } else {
         setSelectedWard("Unknown / Unable to Determine");
@@ -181,12 +431,29 @@ export default function ReportPage() {
   const geocodeManualAddress = async (addressStr: string) => {
     if (!addressStr.trim() || addressStr.length < 3) return;
     
+    const cacheKey = addressStr.toLowerCase().trim();
+    if (geocodeCache.current[cacheKey]) {
+      console.log("Geocoding cache hit for manual address:", addressStr);
+      const cached = geocodeCache.current[cacheKey];
+      setLocationResolvingState("Coordinates Found");
+      setLatitude(cached.lat);
+      setLongitude(cached.lon);
+      setMapCenter([cached.lat, cached.lon]);
+      setMapZoom(16);
+      setFormattedAddress(cached.display_name);
+      setCity(cached.city);
+      setStateName(cached.state);
+      setPostalCode(cached.postcode);
+      setSelectedWard(cached.ward);
+      setTimeout(() => setLocationResolvingState(null), 1000);
+      return;
+    }
+
     setLocationResolvingState("Resolving location...");
+    setLocalityError(null);
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressStr)}&limit=1&countrycodes=in&addressdetails=1`;
-      const res = await fetch(url, {
-        headers: { "User-Agent": "CivicEyeAI-Hackathon-App" }
-      });
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
@@ -202,8 +469,8 @@ export default function ReportPage() {
           
           const addr = item.address || {};
 
-          const extractedCity = addr.city || addr.town || addr.village || "Bengaluru";
-          const extractedState = addr.state || "Karnataka";
+          const extractedCity = addr.city || addr.town || addr.village || "";
+          const extractedState = addr.state || "";
           const extractedPostcode = addr.postcode || "";
 
           setFormattedAddress(item.display_name || "");
@@ -212,21 +479,72 @@ export default function ReportPage() {
           setPostalCode(extractedPostcode);
           
           const derivedWard = deriveWardFromAddress(addr);
-          setSelectedWard(derivedWard);
-          setLocationResolvingState("Ward Resolved");
+          let finalWard = derivedWard;
+          if (derivedWard === "Unknown / Unable to Determine") {
+            try {
+              setLocationResolvingState("Resolving Jurisdiction...");
+              const jRes = await fetch("/api/resolve-jurisdiction", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  locality: addressStr,
+                  city: extractedCity,
+                  state: extractedState,
+                  postcode: extractedPostcode,
+                  formattedAddress: item.display_name || ""
+                })
+              });
+              if (jRes.ok) {
+                const jData = await jRes.json();
+                finalWard = jData.jurisdiction;
+                setSelectedWard(jData.jurisdiction);
+                setLocationResolvingState("Jurisdiction Resolved");
+              } else {
+                setSelectedWard("Unknown / Unable to Determine");
+                setLocationResolvingState(null);
+              }
+            } catch (e) {
+              console.error("Jurisdiction fetch error:", e);
+              setSelectedWard("Unknown / Unable to Determine");
+              setLocationResolvingState(null);
+            }
+          } else {
+            setSelectedWard(derivedWard);
+            setLocationResolvingState("Ward Resolved");
+          }
+
+          geocodeCache.current[cacheKey] = {
+            lat,
+            lon,
+            display_name: item.display_name || "",
+            city: extractedCity,
+            state: extractedState,
+            postcode: extractedPostcode,
+            ward: finalWard
+          };
+
           setTimeout(() => setLocationResolvingState(null), 1000);
         } else {
-          setSelectedWard("Unknown / Unable to Determine");
+          setLatitude(undefined);
+          setLongitude(undefined);
+          setSelectedWard("Pending Location Selection");
           setLocationResolvingState(null);
+          setLocalityError("Could not resolve location. Please enter a more specific location (e.g. including city or state).");
         }
       } else {
-        setSelectedWard("Unknown / Unable to Determine");
+        setLatitude(undefined);
+        setLongitude(undefined);
+        setSelectedWard("Pending Location Selection");
         setLocationResolvingState(null);
+        setLocalityError("Could not resolve location. Please enter a more specific location.");
       }
     } catch (err) {
       console.error("Geocoding manual address failed:", err);
-      setSelectedWard("Unknown / Unable to Determine");
+      setLatitude(undefined);
+      setLongitude(undefined);
+      setSelectedWard("Pending Location Selection");
       setLocationResolvingState(null);
+      setLocalityError("Network error. Please try again or select directly on the map.");
     }
   };
 
@@ -241,7 +559,7 @@ export default function ReportPage() {
     setCity("");
     setStateName("");
     setPostalCode("");
-    setSelectedWard("Unknown / Unable to Determine");
+    setSelectedWard("Pending Location Selection");
     
     const delayDebounce = setTimeout(() => {
       geocodeManualAddress(locality);
@@ -251,32 +569,41 @@ export default function ReportPage() {
   }, [locality, isLocalityManuallyEdited]);
 
   // Autocomplete search input worker
-  const handleSearchInputChange = async (val: string) => {
+  const handleSearchInputChange = (val: string) => {
     setSearchQuery(val);
     if (!val.trim() || val.length < 3) {
       setSuggestions([]);
       return;
     }
 
-    try {
-
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&limit=5&countrycodes=in&viewbox=77.4,13.1,77.8,12.8`;
-      const res = await fetch(url, {
-        headers: { "User-Agent": "CivicEyeAI-Hackathon-App" }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSuggestions(data);
-      }
-    } catch (err) {
-      console.error("Nominatim search failed:", err);
-    } finally {
-
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      const cacheKey = val.toLowerCase().trim();
+      if (geocodeCache.current[cacheKey + "_suggestions"]) {
+        setSuggestions(geocodeCache.current[cacheKey + "_suggestions"]);
+        return;
+      }
+
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&limit=5&countrycodes=in&addressdetails=1`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          setSuggestions(data);
+          geocodeCache.current[cacheKey + "_suggestions"] = data;
+        }
+      } catch (err) {
+        console.error("Nominatim search failed:", err);
+      }
+    }, 400);
   };
 
   // Select suggestion action
   const selectSuggestion = (item: any) => {
+    setLocalityError(null);
     setLocationResolvingState("Resolving location...");
     const lat = parseFloat(item.lat);
     const lon = parseFloat(item.lon);
@@ -293,10 +620,11 @@ export default function ReportPage() {
     }
   };
 
-  // Geolocation trigger is disabled. Location entry is manual, resolved via OpenStreetMap and draggable pins.
+
 
   // Draggable Marker callbacks
   const handleMarkerDragEnd = (lat: number, lng: number) => {
+    setLocalityError(null);
     setLocationResolvingState("Resolving location...");
     setLatitude(lat);
     setLongitude(lng);
@@ -307,6 +635,7 @@ export default function ReportPage() {
   };
 
   const handleMapClick = (lat: number, lng: number) => {
+    setLocalityError(null);
     setLocationResolvingState("Resolving location...");
     setLatitude(lat);
     setLongitude(lng);
@@ -317,49 +646,7 @@ export default function ReportPage() {
   };
 
 
-  const startCamera = async () => {
-    try {
-      setCapturedImage(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setIsCameraActive(true);
-    } catch (err) {
-      console.error("Error accessing camera:", err);
-      alert("Could not access camera. Please use the file upload option.");
-      setIsCameraActive(false);
-    }
-  };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    setIsCameraActive(false);
-  };
-
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const canvas = document.createElement("canvas");
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg");
-        setCapturedImage(dataUrl);
-        stopCamera();
-        setStep("details");
-      }
-    }
-  };
 
   const handleLoadDemo = async (type: "pothole" | "water" | "garbage" | "streetlight") => {
     setIsDemoLoading(true);
@@ -401,7 +688,8 @@ export default function ReportPage() {
         
         // Preload only category and image, reset everything else to allow full user flow
         setDescription("");
-        setSelectedWard("Unknown / Unable to Determine");
+        setSelectedWard("Pending Location Selection");
+        setLocalityError(null);
         setLocality("");
         setLatitude(12.9716);
         setLongitude(77.5946);
@@ -416,7 +704,6 @@ export default function ReportPage() {
         
         setStep("details");
         setIsDemoLoading(false);
-
       };
       reader.readAsDataURL(blob);
     } catch (err) {
@@ -447,7 +734,8 @@ export default function ReportPage() {
       
       setSelectedCategory(category);
       setDescription("");
-      setSelectedWard("Unknown / Unable to Determine");
+      setSelectedWard("Pending Location Selection");
+      setLocalityError(null);
       setLocality("");
       setLatitude(12.9716);
       setLongitude(77.5946);
@@ -462,7 +750,6 @@ export default function ReportPage() {
       
       setStep("details");
       setIsDemoLoading(false);
-
     }
   };
 
@@ -537,7 +824,7 @@ export default function ReportPage() {
           const idx = list.findIndex((r: any) => r.id === duplicateReport.id);
           if (idx !== -1) {
             list[idx].supporter_count = nextCount;
-            localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
+            safeSetLocalStorageItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
           }
         }
         
@@ -545,7 +832,7 @@ export default function ReportPage() {
         if (singleRaw) {
           const report = JSON.parse(singleRaw);
           report.supporter_count = nextCount;
-          localStorage.setItem(`report_${duplicateReport.id}`, JSON.stringify(sanitizeReportForLocalStorage(report)));
+          safeSetLocalStorageItem(`report_${duplicateReport.id}`, JSON.stringify(sanitizeReportForLocalStorage(report)));
         }
       } catch {}
 
@@ -576,22 +863,33 @@ export default function ReportPage() {
       setNameError("Please enter your name.");
       isValid = false;
     } else {
-      const nameRegex = /^[A-Za-z\s'-]+$/;
+      // Allows letters, spaces, hyphens, apostrophes, and dots for initials
+      const nameRegex = /^[A-Za-z\s'\.-]+$/;
       if (!nameRegex.test(trimmedName)) {
-        setNameError("Please enter a valid name.");
+        setNameError("Please enter a valid name (letters, spaces, dots, hyphens, or apostrophes only).");
         isValid = false;
       }
     }
 
     const trimmedContact = contactInfo.trim();
     if (!trimmedContact) {
-      setPhoneError("Please enter a phone number.");
+      setPhoneError("Please enter a phone number or email address.");
       isValid = false;
     } else {
-      const phoneRegex = /^\+?[0-9\s-]{10,15}$/;
-      if (!phoneRegex.test(trimmedContact)) {
-        setPhoneError("Please enter a valid phone number.");
-        isValid = false;
+      const isEmail = trimmedContact.includes("@");
+      if (isEmail) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedContact)) {
+          setPhoneError("Please enter a valid email address.");
+          isValid = false;
+        }
+      } else {
+        // Allows digits, spaces, hyphens, and optional parentheses for phone numbers
+        const phoneRegex = /^\+?[0-9\s\(\)-]{10,15}$/;
+        if (!phoneRegex.test(trimmedContact)) {
+          setPhoneError("Please enter a valid phone number or email address.");
+          isValid = false;
+        }
       }
     }
 
@@ -639,7 +937,10 @@ export default function ReportPage() {
 
   // Submit Image and Description to Call 1
   const submitToVisionAgent = async () => {
-    if (!capturedImage) return;
+    if (!capturedImage) {
+      alert("Please upload or capture an image of the defect before running AI analysis.");
+      return;
+    }
     if (!validateForm()) return;
 
     setStep("analyzing_image");
@@ -776,7 +1077,8 @@ export default function ReportPage() {
           explainability: analysis.explainability || null,
           citizen_name: citizenName || "Concerned Citizen",
           contact_info: contactInfo || "Not provided",
-          description: description
+          description: description,
+          is_demo: isDemoActive
         }),
       });
 
@@ -812,12 +1114,13 @@ export default function ReportPage() {
           supporter_count: 1,
           citizen_name: citizenName || "Concerned Citizen",
           contact_info: contactInfo || "Not provided",
-          description: description
+          description: description,
+          is_demo: isDemoActive
         };
         
         try {
           const sanitizedReport = sanitizeReportForLocalStorage(fullReport);
-          localStorage.setItem(`report_${data.id}`, JSON.stringify(sanitizedReport));
+          safeSetLocalStorageItem(`report_${data.id}`, JSON.stringify(sanitizedReport));
           
           const reportsListRaw = localStorage.getItem("reports_list");
           let reportsList = [];
@@ -825,13 +1128,20 @@ export default function ReportPage() {
             reportsList = JSON.parse(reportsListRaw);
           }
           reportsList.unshift(sanitizedReport);
-          localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(reportsList)));
+          safeSetLocalStorageItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(reportsList)));
         } catch (e) {
           console.error("Local storage report sync failed:", e);
         }
 
-        // Redirect to detail results page
-        router.push(`/report/${data.id}`);
+        if (isDemoActive) {
+          setReportId(data.id);
+          setDemoStep(1);
+          await showTransitionAlert("✓ Complaint Successfully Generated!\nPreparing Municipal Report...", 2000);
+          router.push(`/report/${data.id}`);
+        } else {
+          // Redirect to detail results page
+          router.push(`/report/${data.id}`);
+        }
       } else {
         alert("Failed to generate report. Please try again.");
         setStep("questions");
@@ -933,95 +1243,65 @@ export default function ReportPage() {
               <div 
                 className="relative aspect-video rounded-2xl bg-surface-container-lowest/50 border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-center transition-all duration-300 hover:border-electric-blue/40 group overflow-hidden"
               >
-                {isCameraActive ? (
-                  <>
-                    <video
-                      ref={videoRef}
-                      className="absolute inset-0 h-full w-full object-cover transform scale-x-[-1]"
-                      playsInline
-                      muted
-                    />
-                    {/* Viewfinder grid lines */}
-                    <div className="absolute inset-0 border border-white/5 grid grid-cols-3 grid-rows-3 pointer-events-none z-10">
-                      <div className="border-r border-b border-white/10" />
-                      <div className="border-r border-b border-white/10" />
-                      <div className="border-b border-white/10" />
-                      <div className="border-r border-b border-white/10" />
-                      <div className="border-r border-b border-white/10" />
-                      <div className="border-b border-white/10" />
-                    </div>
-                    
-                    {/* Camera Trigger */}
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-6 z-20">
-                      <button
-                        onClick={capturePhoto}
-                        className="h-16 w-16 rounded-full border-4 border-white bg-red-600 transition-transform duration-300 hover:scale-105 active:scale-95 shadow-2xl"
-                      />
-                      <button
-                        onClick={stopCamera}
-                        className="bg-slate-900/90 text-xs px-4 py-2 rounded-full border border-white/10 text-white font-medium hover:bg-slate-800 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-8 flex flex-col items-center">
-                    {/* SVG Cloud Upload Illustration */}
-                    <div className="mb-6 animate-pulse">
-                      <svg fill="none" height="80" viewBox="0 0 120 120" width="80" xmlns="http://www.w3.org/2000/svg">
-                        <circle className="text-electric-blue/5" cx="60" cy="60" fill="currentColor" r="50"></circle>
-                        <path className="text-electric-blue" d="M40 70L60 50L80 70" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4"></path>
-                        <path className="text-electric-blue" d="M60 50V90" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4"></path>
-                        <path className="text-electric-blue/30" d="M90 60C90 43.4315 76.5685 30 60 30C43.4315 30 30 43.4315 30 60" stroke="currentColor" strokeLinecap="round" strokeWidth="4"></path>
-                      </svg>
-                    </div>
-
-                    <h2 className="font-display text-lg md:text-xl font-bold mb-2 text-white">
-                      Drag and drop media here
-                    </h2>
-                    <p className="text-on-surface-variant text-xs mb-8">
-                      JPG, PNG, or WEBP images containing civic defects
-                    </p>
-
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                      <label className="bg-electric-blue text-background px-6 py-3 rounded-full font-display text-xs font-bold flex items-center gap-2 cursor-pointer hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-electric-blue/20">
-                        <Upload className="h-4 w-4 shrink-0" />
-                        Select File
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      
-                      {hasCamera && (
-                        <button
-                          onClick={startCamera}
-                          className="glass-sm px-6 py-3 rounded-full font-display text-xs font-bold flex items-center gap-2 hover:bg-white/10 transition-all border border-white/10 active:scale-95 text-white"
-                        >
-                          <Camera className="h-4 w-4 shrink-0 text-electric-blue" />
-                          Live Camera
-                        </button>
-                      )}
-                    </div>
+                <div className="p-8 flex flex-col items-center">
+                  {/* SVG Cloud Upload Illustration */}
+                  <div className="mb-6 animate-pulse">
+                    <svg fill="none" height="80" viewBox="0 0 120 120" width="80" xmlns="http://www.w3.org/2000/svg">
+                      <circle className="text-electric-blue/5" cx="60" cy="60" fill="currentColor" r="50"></circle>
+                      <path className="text-electric-blue" d="M40 70L60 50L80 70" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4"></path>
+                      <path className="text-electric-blue" d="M60 50V90" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4"></path>
+                      <path className="text-electric-blue/30" d="M90 60C90 43.4315 76.5685 30 60 30C43.4315 30 30 43.4315 30 60" stroke="currentColor" strokeLinecap="round" strokeWidth="4"></path>
+                    </svg>
                   </div>
-                )}
+
+                  <h2 className="font-display text-lg md:text-xl font-bold mb-2 text-white">
+                    Drag and drop media here
+                  </h2>
+                  <p className="text-on-surface-variant text-xs mb-8">
+                    JPG, PNG, or WEBP images containing civic defects
+                  </p>
+
+                  <div className="flex justify-center">
+                    <label className="bg-electric-blue text-background px-8 py-3 rounded-full font-display text-xs font-bold flex items-center gap-2 cursor-pointer hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-electric-blue/20">
+                      <Upload className="h-4 w-4 shrink-0" />
+                      Upload Image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* Location Bar */}
               <div className="flex justify-center">
-                <div className="glass-sm px-5 py-2.5 rounded-full flex items-center gap-3 font-display text-xs text-on-surface-variant border border-white/5">
-                  <MapPin className="text-electric-blue h-4.5 w-4.5" />
-                  <span>
-                    Current Location: <span className="text-on-surface font-semibold">
-                      {latitude !== undefined && longitude !== undefined
-                        ? `${Math.abs(latitude).toFixed(4)}° ${latitude >= 0 ? "N" : "S"}, ${Math.abs(longitude).toFixed(4)}° ${longitude >= 0 ? "E" : "W"}`
-                        : "12.9716° N, 77.5946° E"}
+                {latitude !== undefined && longitude !== undefined && (
+                  <div className="glass-sm px-5 py-2.5 rounded-full flex items-center gap-3 font-display text-xs text-on-surface-variant border border-white/5 animate-entrance">
+                    <MapPin className="text-electric-blue h-4.5 w-4.5" />
+                    <span>
+                      Location: <span className="text-on-surface font-semibold font-mono">
+                        {`${Math.abs(latitude).toFixed(4)}° ${latitude >= 0 ? "N" : "S"}, ${Math.abs(longitude).toFixed(4)}° ${longitude >= 0 ? "E" : "W"}`}
+                      </span>
                     </span>
-                  </span>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLatitude(undefined);
+                        setLongitude(undefined);
+                        setFormattedAddress("");
+                        setLocality("");
+                        setSelectedWard("Pending Location Selection");
+                      }}
+                      className="text-on-surface-variant hover:text-white ml-2 transition-colors focus:outline-none"
+                      title="Clear Location"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Category Selection */}
@@ -1129,6 +1409,7 @@ export default function ReportPage() {
                       center={mapCenter}
                       zoom={mapZoom}
                       draggable={true}
+                      showUserMarker={latitude !== undefined && longitude !== undefined}
                       onMarkerDragEnd={handleMarkerDragEnd}
                       onMapClick={handleMapClick}
                     />
@@ -1152,18 +1433,27 @@ export default function ReportPage() {
                       <div className="min-w-0">
                         <span className="text-[8px] font-bold text-electric-blue uppercase tracking-wider font-mono">Verified Coordinates</span>
                         <p className="text-[11px] font-bold text-white font-mono truncate">
-                          {latitude?.toFixed(5)}° N, {longitude?.toFixed(5)}° E
+                          {latitude !== undefined && longitude !== undefined
+                            ? `${latitude.toFixed(5)}° N, ${longitude.toFixed(5)}° E`
+                            : "Location pending..."}
                         </p>
                         <p className="text-[10px] text-on-surface-variant truncate">
-                          {city || "Bengaluru"}, {stateName || "Karnataka"}
+                          {city && stateName ? `${city}, ${stateName}` : "Search or click the map"}
                         </p>
                       </div>
                     </div>
-                    {formattedAddress && (
+                    {formattedAddress ? (
                       <div className="border-t border-white/5 pt-2">
                         <span className="text-[8px] font-bold text-on-surface-variant uppercase block font-mono">Geocoded Address</span>
                         <p className="text-[10px] text-slate-300 leading-normal mt-0.5 line-clamp-2">
                           {formattedAddress}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="border-t border-white/5 pt-2">
+                        <span className="text-[8px] font-bold text-on-surface-variant/50 uppercase block font-mono">Geocoded Address</span>
+                        <p className="text-[10px] text-slate-400 italic mt-0.5">
+                          Please select a location to geocode.
                         </p>
                       </div>
                     )}
@@ -1183,7 +1473,7 @@ export default function ReportPage() {
                           if (nameError) setNameError(null);
                         }}
                         placeholder="e.g. Rahul Sharma"
-                        className="w-full rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all"
+                        className="w-full demo-name-input rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all"
                       />
                       {nameError && (
                         <p className="text-[10px] text-rose-400 mt-1 font-medium font-sans">
@@ -1204,7 +1494,7 @@ export default function ReportPage() {
                           if (phoneError) setPhoneError(null);
                         }}
                         placeholder="e.g. +91 98765 43210"
-                        className="w-full rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all"
+                        className="w-full demo-contact-input rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all"
                       />
                       {phoneError && (
                         <p className="text-[10px] text-rose-400 mt-1 font-medium font-sans">
@@ -1225,25 +1515,26 @@ export default function ReportPage() {
                           setIsLocalityManuallyEdited(true);
                         }}
                         placeholder="e.g. Koramangala 80ft Rd, Indiranagar"
-                        className="w-full rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all"
+                        className="w-full demo-locality-input rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all"
                       />
+                      {localityError && (
+                        <p className="text-[10px] text-rose-400 mt-1 font-medium font-sans animate-entrance">
+                          ⚠️ {localityError}
+                        </p>
+                      )}
                     </div>
 
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-1">
-                        Derived Ward Zone
+                        Civic Jurisdiction
                       </label>
-                      <select
-                        value={selectedWard}
-                        onChange={(e) => setSelectedWard(e.target.value)}
-                        className="w-full rounded-xl border border-white/10 bg-surface-container-lowest/40 p-2.5 text-xs text-white focus:outline-none focus:border-electric-blue transition-all"
-                      >
-                        {wardsList.map((w) => (
-                          <option key={w} value={w} className="bg-surface-container-highest">
-                            {w}
-                          </option>
-                        ))}
-                      </select>
+                      <input
+                        type="text"
+                        value={selectedWard.startsWith("Ward ") ? `BBMP ${selectedWard}` : selectedWard}
+                        readOnly
+                        disabled
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/40 p-2.5 text-xs text-slate-400 focus:outline-none cursor-not-allowed font-medium select-none"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1273,15 +1564,15 @@ export default function ReportPage() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe details (e.g. deep pothole near shop, leaking water flowing into main drainage...)"
-                  className="w-full rounded-xl border border-white/10 bg-surface-container-lowest/40 p-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all min-h-[90px] resize-none"
+                  className="w-full demo-description-input rounded-xl border border-white/10 bg-surface-container-lowest/40 p-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-electric-blue transition-all min-h-[90px] resize-none"
                 />
               </div>
 
               <div className="shimmer-border">
                 <button
                   onClick={submitToVisionAgent}
-                  disabled={!locality || !description}
-                  className="w-full bg-primary text-on-primary py-4 rounded-xl font-display text-sm font-bold flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all relative z-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!capturedImage || !locality || !description || locationResolvingState !== null || latitude === undefined || longitude === undefined}
+                  className="w-full demo-analyze-button bg-primary text-on-primary py-4 rounded-xl font-display text-sm font-bold flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all relative z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Analyze with Vision Agent
                   <ArrowRight className="h-4 w-4" />
@@ -1464,7 +1755,7 @@ export default function ReportPage() {
               <div className="grid sm:grid-cols-2 gap-4">
                 <button
                   onClick={handleSupportDuplicate}
-                  className="bg-electric-blue text-background py-4 rounded-xl font-display text-sm font-bold flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-electric-blue/20"
+                  className="w-full demo-support-merge-button bg-electric-blue text-background py-4 rounded-xl font-display text-sm font-bold flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-electric-blue/20"
                 >
                   <span className="material-symbols-outlined">thumb_up</span>
                   Support Existing Report

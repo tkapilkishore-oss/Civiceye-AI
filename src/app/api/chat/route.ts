@@ -2,7 +2,36 @@ import { NextResponse } from "next/server";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function getMockChatResponse(messages: Array<{role: string, content: string}>): string {
+function getMockChatResponse(messages: Array<{role: string, content: string}>, complaintSession?: any): string {
+  if (complaintSession && complaintSession.active) {
+    const step = complaintSession.currentStep;
+    const data = complaintSession.collectedData;
+    const issueType = complaintSession.issueType;
+
+    if (step === "issue_type") {
+      return "Certainly. Could you tell me what the complaint is regarding?\n\nFor example:\n• Pothole\n• Water Leakage\n• Garbage Accumulation\n• Broken Streetlight";
+    }
+    if (step === "name") {
+      return `I can help you register that ${issueType || 'civic'} complaint. May I know your full name?`;
+    }
+    if (step === "contact") {
+      return `Thank you, ${data.name || 'Citizen'}. Please provide your contact number or email address.`;
+    }
+    if (step === "location") {
+      return `Got it. Please share the exact location of the issue (street, locality, or landmark).`;
+    }
+    if (step === "description") {
+      return `Understood. Could you briefly describe the problem?`;
+    }
+    if (step === "image") {
+      return `Do you have an image of the issue? You can upload one, or type 'no' to skip.`;
+    }
+    if (step === "completed") {
+      return `Thank you! I have compiled all the details. I will now generate and file your official report.`;
+    }
+    return `Let's proceed with the complaint registration.`;
+  }
+
   const userMessages = messages.filter(m => m.role === "user");
   const userText = userMessages.map(m => m.content).join(" ");
   const userTextLower = userText.toLowerCase();
@@ -12,331 +41,495 @@ function getMockChatResponse(messages: Array<{role: string, content: string}>): 
 
   const assistantMessages = messages.filter(m => m.role === "assistant" || m.role === "model");
 
-  // 1. Identify Intent (Intent-First Classification)
-  const isQuestion = 
-    latestUserMsgLower.includes("?") ||
-    /^(who|what|how|why|where|which|when|can|is|does|explain|show|tell|check|track|verify|reject|work|flow|duplicate|severity|priorit)/i.test(latestUserMsgLower) ||
-    latestUserMsgLower.includes("how does") ||
-    latestUserMsgLower.includes("how is") ||
-    latestUserMsgLower.includes("who is") ||
-    latestUserMsgLower.includes("who repairs") ||
-    latestUserMsgLower.includes("who handles") ||
-    latestUserMsgLower.includes("what is") ||
-    latestUserMsgLower.includes("what happens") ||
-    latestUserMsgLower.includes("can i");
+  // Community validation check
+  const isCommunityCheck = 
+    latestUserMsgLower.includes("anyone else reported") || 
+    latestUserMsgLower.includes("someone else reported") ||
+    latestUserMsgLower.includes("any other report") ||
+    latestUserMsgLower.includes("has anyone else") ||
+    latestUserMsgLower.includes("similar complaints");
 
-  // Determine if we are already in the registration flow based on previous assistant messages.
-  const alreadyInRegistration = assistantMessages.some(m => {
-    const contentLower = m.content.toLowerCase();
-    return (
-      contentLower.includes("gather the details step-by-step") ||
-      contentLower.includes("full name") ||
-      contentLower.includes("contact number") ||
-      contentLower.includes("exact locality, landmark") ||
-      contentLower.includes("description of the issue") ||
-      contentLower.includes("file official complaint") ||
-      contentLower.includes("complaint summary")
-    );
-  });
-
-  const explicitReportRequest = 
-    latestUserMsgLower.includes("i want to report") ||
-    latestUserMsgLower.includes("register a complaint") ||
-    latestUserMsgLower.includes("file a complaint") ||
-    latestUserMsgLower.includes("please register") ||
-    latestUserMsgLower.includes("please report") ||
-    latestUserMsgLower.includes("create a complaint") ||
-    latestUserMsgLower.includes("new complaint") ||
-    latestUserMsgLower.includes("report this issue") ||
-    latestUserMsgLower.includes("submit an issue") ||
-    latestUserMsgLower.includes("civiceye to report") ||
-    latestUserMsgLower.includes("file a report") ||
-    latestUserMsgLower.includes("report a pothole") ||
-    latestUserMsgLower.includes("report a leak") ||
-    latestUserMsgLower.includes("report garbage") ||
-    latestUserMsgLower.includes("report a streetlight");
-
-  const statementReportRequest = 
-    !isQuestion && (
-      (latestUserMsgLower.includes("there is") || latestUserMsgLower.includes("i found") || latestUserMsgLower.includes("i see")) && 
-      (latestUserMsgLower.includes("pothole") || latestUserMsgLower.includes("leak") || latestUserMsgLower.includes("streetlight") || latestUserMsgLower.includes("garbage") || latestUserMsgLower.includes("trash"))
-    );
-
-  const wantsToReport = explicitReportRequest || statementReportRequest;
-  const inRegistrationMode = alreadyInRegistration || wantsToReport;
-
-  if (!inRegistrationMode) {
-    // 2. Classify informational/FAQ intents
-    
-    // Complaint Status Inquiry
-    if (latestUserMsgLower.includes("status") || 
-        latestUserMsgLower.includes("check") || 
-        latestUserMsgLower.includes("track") ||
-        latestUserMsgLower.includes("can i track")) {
-      return "To track a report, copy its unique Report ID (e.g., `rep-001`) and search for it in the Operations Console on the Dashboard tab, or go to `/report/<ID>`. The status updates live from 'Investigating' to 'Repair Started' and 'Resolved'.";
+  if (isCommunityCheck) {
+    const hasDuplicates = 
+      latestUserMsgLower.includes("vidyaranyapura") ||
+      latestUserMsgLower.includes("pothole") ||
+      latestUserMsgLower.includes("garbage") ||
+      latestUserMsgLower.includes("koramangala") ||
+      latestUserMsgLower.includes("whitefield") ||
+      latestUserMsgLower.includes("leak") ||
+      (complaintSession && complaintSession.collectedData && 
+       ((complaintSession.collectedData.locality || "").toLowerCase().includes("vidyaranyapura") ||
+        (complaintSession.collectedData.locality || "").toLowerCase().includes("koramangala") ||
+        (complaintSession.collectedData.locality || "").toLowerCase().includes("whitefield")));
+       
+    if (hasDuplicates) {
+      return "Yes. Multiple similar complaints have already been detected in this locality. Your report has strengthened community validation and helps authorities prioritize the issue.";
+    } else {
+      return "No matching reports have been detected yet. Your complaint becomes the first recorded report for this issue.";
     }
-
-    // Complaint Workflow & Lifecycle
-    if (latestUserMsgLower.includes("workflow") || 
-        latestUserMsgLower.includes("reject") || 
-        latestUserMsgLower.includes("what happens after") ||
-        latestUserMsgLower.includes("submit a complaint")) {
-      if (latestUserMsgLower.includes("reject")) {
-        return "If the municipal department rejects a complaint (e.g., due to jurisdictional overlap or incorrect categorizations), the CivicEye routing engine flags the ticket and returns it to the dispatch queue for manual override or automatically redirects it to the correct agency.";
-      }
-      return "After submission, a unique Report ID is generated and the ticket enters the database. The system automatically creates a PDF Resolution Blueprint and routes the work order queue to the assigned municipal department. The live workflow transitions from 'Investigating' to 'Repair Started' and finally 'Resolved'.";
-    }
-
-    // AI Explainability (Duplicate Detection & Severity)
-    if (latestUserMsgLower.includes("duplicate") || 
-        latestUserMsgLower.includes("severity") || 
-        latestUserMsgLower.includes("explain why") || 
-        latestUserMsgLower.includes("prioritize") ||
-        latestUserMsgLower.includes("analyze")) {
-      if (latestUserMsgLower.includes("duplicate")) {
-        return "CivicEye AI checks for duplicates by running a geospatial vector scan within a 200-meter radius of the submitted coordinates. If another active report of the same category is found, the system registers the user as a supporter of the existing report rather than creating a duplicate ticket.";
-      }
-      return "CivicEye AI uses computer vision models to identify the type of infrastructure defect and assess its severity (Low, Medium, High, Critical). It checks localized parameters like traffic density, proximity to hospitals/schools, and safety hazards to prioritize dispatches dynamically.";
-    }
-
-    // Routing Guidance
-    if (latestUserMsgLower.includes("route") || latestUserMsgLower.includes("routed")) {
-      return "Once coordinates are geocoded, CivicEye AI resolves the nearest BBMP Ward. Using this ward allocation and the defect category, the platform routes it directly: road issues go to the BBMP Road Infrastructure division, water leaks to BWSSB, streetlights to Municipal Electrical Services, and garbage to the SWM division.";
-    }
-
-    // Authority Guidance
-    if (latestUserMsgLower.includes("who repairs") || 
-        latestUserMsgLower.includes("who handles") || 
-        latestUserMsgLower.includes("what department") || 
-        latestUserMsgLower.includes("which department") || 
-        latestUserMsgLower.includes("which authority") || 
-        latestUserMsgLower.includes("responsible for")) {
-      
-      if (latestUserMsgLower.includes("pothole") || latestUserMsgLower.includes("road")) {
-        return "In Bengaluru, pothole repairs and road infrastructure issues are handled by the BBMP (Bruhat Bengaluru Mahanagara Palike) Road Infrastructure division. CivicEye AI automatically dispatches road-related reports directly to their regional executive engineers.";
-      }
-      if (latestUserMsgLower.includes("water") || latestUserMsgLower.includes("leak") || latestUserMsgLower.includes("sewage") || latestUserMsgLower.includes("drain")) {
-        return "Water supply leakages, pipeline bursts, and sewage drainage overflows are managed by the BWSSB (Bangalore Water Supply and Sewerage Board). Our platform routes water leakage alerts straight to the regional BWSSB maintenance office.";
-      }
-      if (latestUserMsgLower.includes("light") || latestUserMsgLower.includes("street-light") || latestUserMsgLower.includes("electricity") || latestUserMsgLower.includes("power")) {
-        return "Streetlights and local electrical grid concerns are managed by the BBMP Electrical Division, in collaboration with BESCOM. When you submit a broken streetlight report, it is forwarded directly to their electrical contractor queue.";
-      }
-      if (latestUserMsgLower.includes("garbage") || latestUserMsgLower.includes("waste") || latestUserMsgLower.includes("trash") || latestUserMsgLower.includes("dump")) {
-        return "Illegal dumping and garbage accumulation are managed by the Solid Waste Management (SWM) cell under the BBMP. They dispatch localized sanitation supervisors to clear waste reported on our system.";
-      }
-      return "Bengaluru's municipal duties are divided: BBMP is responsible for roads, streetlights, and sanitation; BWSSB manages water lines and sewers; BESCOM covers electrical grids. CivicEye AI automatically identifies the correct agency and dispatches the alert.";
-    }
-
-    // Repair Information: timeline/duration
-    if (latestUserMsgLower.includes("how long") || 
-        latestUserMsgLower.includes("time") || 
-        latestUserMsgLower.includes("duration") || 
-        latestUserMsgLower.includes("when will") ||
-        latestUserMsgLower.includes("sla")) {
-      return "BBMP SLA targets vary by severity: Critical issues (like major water bursts or arterial road hazards) are resolved within 24 to 48 hours. Standard issues (like broken streetlights or minor potholes) typically take 3 to 7 business days once verified. You can monitor the real-time progress on our Dashboard.";
-    }
-
-    // Emergency Safety Guidance / Dangerous issues
-    if (latestUserMsgLower.includes("safety") || 
-        latestUserMsgLower.includes("danger") || 
-        latestUserMsgLower.includes("emergency") || 
-        latestUserMsgLower.includes("sparking") || 
-        latestUserMsgLower.includes("accident") ||
-        latestUserMsgLower.includes("dangerous")) {
-      return "For immediate public dangers (like live sparking wires or open manholes), contact local helplines: BESCOM at 1912 or BBMP Control Room at 080-22221188. If reporting on CivicEye, flag it as 'Critical' severity for high priority dispatch.";
-    }
-
-    // General Civic Questions / FAQ about the app
-    if (latestUserMsgLower.includes("what is civiceye") || 
-        latestUserMsgLower.includes("how does this platform") || 
-        latestUserMsgLower.includes("how does it work") || 
-        latestUserMsgLower.includes("what does this app")) {
-      return "CivicEye AI is a modern civic engagement platform for Bengaluru. Citizens upload photos of infrastructure issues (potholes, garbage, water leaks, broken lights). Our AI analyzes the visual evidence, maps the location to the correct BBMP ward, checks for duplicates, and auto-dispatches reports to the responsible authority.";
-    }
-
-    // Default conversational reply
-    return "Greetings! I am Officer Gemini, your AI Civic Assistant at the CivicEye BBMP Desk. I can answer general questions about Bangalore municipal departments, repair timelines, safety advice, or guide you through registering a new complaint. How can I assist you today?";
   }
 
-  // --- Complaint Registration Mode ---
-  let category = "Pothole";
-  if (userTextLower.includes("garbage") || userTextLower.includes("trash") || userTextLower.includes("waste") || userTextLower.includes("dump")) category = "Garbage Accumulation";
-  else if (userTextLower.includes("water") || userTextLower.includes("leak") || userTextLower.includes("pipe") || userTextLower.includes("sewage")) category = "Water Leakage";
-  else if (userTextLower.includes("light") || userTextLower.includes("lamp") || userTextLower.includes("dark") || userTextLower.includes("streetlight")) category = "Broken Streetlight";
+  // Category 5 — Out of Scope Classification
+  const isOutOfScope = 
+    /speed of light|quantum|stock market|programming|coding|python|javascript|c\+\+|java|html|css|react|nextjs|tutorial|movie review|politics|medical advice|physic|chemistry|astronomy|galaxy|recipe|sports|movies|travel/i.test(latestUserMsgLower);
 
-  let citizenName = "";
-  let contactInfo = "";
-  let locality = "";
-  let description = "";
-  let severity = "High";
+  if (isOutOfScope) {
+    return "I apologize, but CivicEye AI specializes in civic infrastructure, municipal services, complaint registration, public utilities, and related citizen assistance. I am unable to answer topics outside this scope. Please feel free to ask a civic-related question instead.";
+  }
 
-  // Reconstruct states based on the conversation history turns
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg.role === "model" || msg.role === "assistant") {
-      const msgLower = msg.content.toLowerCase();
-      const nextUserMsg = messages[i + 1];
-      if (nextUserMsg && nextUserMsg.role === "user") {
-        const userVal = nextUserMsg.content.trim();
-        const userValLower = userVal.toLowerCase();
+  // Category 1 — Greetings
+  const isGreeting = /^(hello|hi|hey|greetings|good\s*morning|good\s*evening|good\s*afternoon|how\s*are\s*you)/i.test(latestUserMsgLower);
+  const isThankYou = /thank\s*you|thanks/i.test(latestUserMsgLower);
+  const isGoodbye = /^(bye|goodbye|see\s*you)/i.test(latestUserMsgLower);
+  
+  // Math matcher: e.g. "2 + 2", "10 * 12", "10 x 12", "what is 2 + 2"
+  const mathMatch = latestUserMsgLower.match(/(?:what\s*is\s*)?(\d+)\s*([\+\-\*\/x])\s*(\d+)/i);
+  const isMath = mathMatch !== null;
 
-        if (msgLower.includes("full name") || msgLower.includes("reporter details") || msgLower.includes("full name and a contact number")) {
-          const phoneMatch = userVal.match(/(?:\+91|0)?[6-9]\d{9}/);
-          const emailMatch = userVal.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-          if (phoneMatch) contactInfo = phoneMatch[0];
-          else if (emailMatch) contactInfo = emailMatch[0];
+  const isAlphabetOrGeneral = 
+    latestUserMsgLower.includes("second letter") ||
+    latestUserMsgLower.includes("alphabet") ||
+    latestUserMsgLower.includes("today's day") ||
+    latestUserMsgLower.includes("what day is it");
 
-          const nameMatch = userVal.match(/(?:my name is|i am|this is|call me)\s+([a-zA-Z\s]+?)(?:\.|\b|and|for)/i);
-          if (nameMatch && nameMatch[1]) {
-            citizenName = nameMatch[1].trim();
-          } else {
-            const cleanedText = userVal.replace(phoneMatch ? phoneMatch[0] : "", "").replace(emailMatch ? emailMatch[0] : "", "").replace(/,/g, "").trim();
-            if (cleanedText && cleanedText.length < 35 && !cleanedText.toLowerCase().includes("koramangala") && !cleanedText.toLowerCase().includes("indiranagar") && !cleanedText.toLowerCase().includes("hebbal") && !cleanedText.toLowerCase().includes("jayanagar") && !cleanedText.toLowerCase().includes("peenya") && !cleanedText.toLowerCase().includes("malleshwaram") && !cleanedText.toLowerCase().includes("marathahalli") && !cleanedText.toLowerCase().includes("road") && !cleanedText.toLowerCase().includes("street") && !cleanedText.toLowerCase().includes("near")) {
-              citizenName = cleanedText;
+  const isEveryday = isGreeting || isThankYou || isGoodbye || isMath || isAlphabetOrGeneral;
+
+  if (isEveryday && !latestUserMsgLower.includes("report") && !latestUserMsgLower.includes("register") && !latestUserMsgLower.includes("pothole") && !latestUserMsgLower.includes("garbage") && !latestUserMsgLower.includes("leak") && !latestUserMsgLower.includes(" streetlight")) {
+    if (isGreeting) {
+      if (latestUserMsgLower.includes("morning")) {
+        return "Good morning! I am Officer Gemini, your Civic AI Companion. Let me know if you need help with civic Q&A or filing a complaint.";
+      }
+      if (latestUserMsgLower.includes("afternoon")) {
+        return "Good afternoon! I am Officer Gemini, your Civic AI Companion. Let me know if you need help with civic Q&A or filing a complaint.";
+      }
+      if (latestUserMsgLower.includes("evening")) {
+        return "Good evening! I am Officer Gemini, your Civic AI Companion. Let me know if you need help with civic Q&A or filing a complaint.";
+      }
+      return "Hello! I am Officer Gemini, your Civic AI Companion. How can I assist you with municipal services, civic questions, or registering a complaint today?";
+    }
+    if (isThankYou) {
+      return "You're very welcome! I'm here to help. Let me know if you have any other civic questions.";
+    }
+    if (isGoodbye) {
+      return "Goodbye! Have a great day ahead. Let me know whenever you need assistance.";
+    }
+    if (isMath && mathMatch) {
+      const num1 = parseInt(mathMatch[1]);
+      const op = mathMatch[2].toLowerCase();
+      const num2 = parseInt(mathMatch[3]);
+      let result = 0;
+      let opSymbol = op;
+      if (op === "+") result = num1 + num2;
+      else if (op === "-") result = num1 - num2;
+      else if (op === "*" || op === "x") {
+        result = num1 * num2;
+        opSymbol = "×";
+      }
+      else if (op === "/") result = Math.round((num1 / num2) * 100) / 100;
+      return `${num1} ${opSymbol} ${num2} is ${result}.`;
+    }
+    if (latestUserMsgLower.includes("second letter")) {
+      return "The second letter of the alphabet is B.";
+    }
+    if (latestUserMsgLower.includes("today's day") || latestUserMsgLower.includes("what day is it")) {
+      return "Today is a great day to improve our city's infrastructure!";
+    }
+    return "Greetings! Let me know how I can help you with civic issues or municipal queries.";
+  }
+
+  // Category 4 — Complaint Mode (Step-by-Step Collection)
+  //
+  // Detection is intentionally broad. The client-side state machine in
+  // page.tsx is the authoritative router; this mock handler must agree.
+
+  // Explicit registration phrases
+  const explicitReportPhrases = [
+    "i want to report", "i want to register", "i want to file",
+    "i need to report", "i need to register", "i need to file",
+    "please register", "please report", "please file",
+    "register a complaint", "file a complaint", "report a complaint",
+    "register an issue", "file an issue", "report an issue",
+    "create a complaint", "new complaint", "submit a complaint",
+    "report this", "register this", "i would like to report",
+    "i would like to register", "i would like to file",
+    "i need to report a civic", "i want to report a civic",
+  ];
+  const explicitReportRequest = explicitReportPhrases.some((p) => latestUserMsgLower.includes(p));
+
+  // Civic problem keywords that indicate a reportable defect
+  const civicProblemKeywords = [
+    "pothole", "garbage", "trash", "waste", "dump", "litter",
+    "water leak", "water leakage", "pipe burst", "pipe leak",
+    "sewage", "drainage", "drain overflow", "flooding", "flood",
+    "streetlight", "street light", "lamp post", "street-light",
+    "broken light", "light not working", "light is not working",
+    "road damage", "road not repaired", "road has", "broken road",
+    "damaged road", "road is broken",
+  ];
+  // Also match singular civic keywords when accompanied by a problem pattern
+  const hasCivicKeyword =
+    civicProblemKeywords.some((kw) => latestUserMsgLower.includes(kw)) ||
+    /pothole|leak|streetlight|garbage|trash|waste|sewage|drain|flood/i.test(latestUserMsgLower);
+
+  // Problem statement patterns — deliberately broad to match natural language
+  const problemStatementPatterns = [
+    /there\s+is\s+(a|an)?\s*/i,
+    /there'?s\s+(a|an)?\s*/i,
+    /i\s+(have|found|noticed|see|saw|spotted)\s+(a|an)?\s*/i,
+    /we\s+(have|found|noticed|see|saw)\s+(a|an)?\s*/i,
+    /my\s+(area|road|street|locality|house|building|colony|lane)\s+(has|have)/i,
+    /our\s+(area|road|street|locality|lane)\s+(has|have)/i,
+    /found\s+(a|an)?\s*/i,
+    /near\s+(my|the|our)\s+/i,
+    /on\s+(my|the|our)\s+(road|street|lane|area)/i,
+    /\b(broken|damaged|blocked|clogged|overflowing|leaking|flooded|dirty|unsafe|hazardous)\b/i,
+    /not\s+working/i,
+    /isn'?t\s+working/i,
+    /has\s+been\s+(broken|damaged|blocked|leaking|overflowing|flooded|there|present)/i,
+    /has\s+not\s+been\s+(repaired|fixed|cleaned)/i,
+    /\bfor\s+(the\s+past|over|nearly|about)\s+\d+/i,
+    /\bfor\s+(one|two|three|four|five|a few|several|many)\s+(day|week|month)/i,
+    /\b(repair|fix|clean|clear|remove)\s+(the|this|a|an)?\s*(pothole|leak|garbage|streetlight|road|pipe|drain)/i,
+  ];
+  const matchesProblemPattern = problemStatementPatterns.some((re) => re.test(latestUserMsgLower));
+
+  // Questions should never trigger complaint mode
+  const isQuestion =
+    /^(what|why|how|who|which|where|when|can\s+you|tell\s+me|is\s+there|are\s+there)\b/i.test(latestUserMsgLower) ||
+    latestUserMsgLower.endsWith("?");
+
+  const problemStatementRequest = hasCivicKeyword && matchesProblemPattern;
+  const wantsToReport = (explicitReportRequest || problemStatementRequest) && !isQuestion;
+  const inRegistrationMode = wantsToReport;
+
+  if (inRegistrationMode) {
+    // Detect the issue type from all user messages so far
+    let category = "";
+    if (userTextLower.includes("garbage") || userTextLower.includes("trash") || userTextLower.includes("waste") || userTextLower.includes("dump")) category = "Garbage Accumulation";
+    else if (userTextLower.includes("water") || userTextLower.includes("leak") || userTextLower.includes("pipe") || userTextLower.includes("sewage") || userTextLower.includes("flood")) category = "Water Leakage";
+    else if (userTextLower.includes("light") || userTextLower.includes("lamp") || userTextLower.includes("dark") || userTextLower.includes("streetlight")) category = "Broken Streetlight";
+    else if (userTextLower.includes("pothole") || userTextLower.includes("road") || userTextLower.includes("crater")) category = "Pothole";
+
+    let citizenName = "";
+    let contactInfo = "";
+    let locality = "";
+    let description = "";
+
+    // Extract fields sequentially based on past assistant questions
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.role === "model" || msg.role === "assistant") {
+        const msgLower = msg.content.toLowerCase();
+        const nextUserMsg = messages[i + 1];
+        if (nextUserMsg && nextUserMsg.role === "user") {
+          const userVal = nextUserMsg.content.trim();
+
+          if (msgLower.includes("full name") || msgLower.includes("your name")) {
+            citizenName = userVal;
+          } else if (msgLower.includes("contact number") || msgLower.includes("email")) {
+            contactInfo = userVal;
+          } else if (msgLower.includes("exact location") || msgLower.includes("where is it located") || msgLower.includes("locality")) {
+            locality = userVal;
+          } else if (msgLower.includes("description of the issue") || msgLower.includes("describe the problem")) {
+            description = userVal;
+          } else if (msgLower.includes("complaint regarding") || msgLower.includes("what is the complaint") || msgLower.includes("what is the issue")) {
+            // User answered the issue-discovery question — category is now in their reply
+            const issueReply = userVal.toLowerCase();
+            if (!category) {
+              if (issueReply.includes("garbage") || issueReply.includes("trash") || issueReply.includes("waste")) category = "Garbage Accumulation";
+              else if (issueReply.includes("water") || issueReply.includes("leak") || issueReply.includes("pipe") || issueReply.includes("sewage")) category = "Water Leakage";
+              else if (issueReply.includes("light") || issueReply.includes("lamp") || issueReply.includes("streetlight")) category = "Broken Streetlight";
+              else if (issueReply.includes("pothole") || issueReply.includes("road") || issueReply.includes("crater")) category = "Pothole";
+              else category = "Pothole"; // default fallback
             }
           }
         }
-
-        if (msgLower.includes("exact locality, landmark, or street name") || msgLower.includes("locality, landmark, or street name")) {
-          if (!userValLower.includes("my name is") && !userValLower.includes("i am") && userValLower.length > 3) {
-            locality = userVal;
-          }
-        }
-
-        if (msgLower.includes("description of the issue")) {
-          description = userVal;
-          if (userValLower.includes("critical") || userValLower.includes("flooding") || userValLower.includes("danger") || userValLower.includes("accident") || userValLower.includes("risk")) {
-            severity = "Critical";
-          } else if (userValLower.includes("medium")) {
-            severity = "Medium";
-          } else if (userValLower.includes("low") || userValLower.includes("minor")) {
-            severity = "Low";
-          }
-        }
       }
     }
-  }
 
-  // Backup regex parsers
-  if (!citizenName) {
-    const nameMatch = userText.match(/(?:my name is|i am|this is|call me)\s+([a-zA-Z\s]+?)(?:\.|\b|and|for)/i);
-    if (nameMatch && nameMatch[1]) {
-      citizenName = nameMatch[1].trim();
+    // Try extracting from the first user message if they provided it immediately
+    const initialUserMsg = messages[0]?.content || "";
+    if (!citizenName) {
+      const nameMatch = initialUserMsg.match(/(?:my name is|i am|this is)\s+([a-zA-Z\s\.]+?)(?:\.|\b|and|for)/i);
+      if (nameMatch) citizenName = nameMatch[1].trim();
     }
-  }
-  if (!contactInfo) {
-    const phoneMatch = userText.match(/(?:\+91|0)?[6-9]\d{9}/);
-    const emailMatch = userText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    if (phoneMatch) contactInfo = phoneMatch[0];
-    else if (emailMatch) contactInfo = emailMatch[0];
-  }
-  if (!locality) {
-    if (userTextLower.includes("indiranagar") || userTextLower.includes("domlur")) {
-      locality = "Indiranagar 100 Feet Road";
-    } else if (userTextLower.includes("koramangala") || userTextLower.includes("hsr")) {
-      locality = "Koramangala 4th Block";
-    } else if (userTextLower.includes("hebbal") || userTextLower.includes("vidyaranyapura")) {
-      locality = "Hebbal Bellary Road";
-    } else if (userTextLower.includes("jayanagar") || userTextLower.includes("jp nagar")) {
-      locality = "Jayanagar 4th T Block";
-    } else if (userTextLower.includes("peenya")) {
-      locality = "Peenya Industrial Area";
-    } else if (userTextLower.includes("malleshwaram")) {
-      locality = "Malleshwaram 15th Cross";
-    } else if (userTextLower.includes("marathahalli") || userTextLower.includes("mahadevapura")) {
-      locality = "Marathahalli Outer Ring Road";
+    if (!contactInfo) {
+      const phoneMatch = initialUserMsg.match(/(?:\+91|0)?[6-9]\d{9}/);
+      if (phoneMatch) contactInfo = phoneMatch[0];
     }
-  }
-  if (!description) {
-    for (let i = 0; i < userMessages.length; i++) {
-      const msg = userMessages[i].content;
-      if (msg.length > 20 && !msg.toLowerCase().includes("my name") && !msg.toLowerCase().includes("i am") && !msg.toLowerCase().includes("phone") && !msg.toLowerCase().includes("email") && !msg.toLowerCase().includes("report") && !msg.toLowerCase().includes("register")) {
-        description = msg;
-        break;
-      }
-    }
-  }
 
-  // 1. Collect Name & Contact Info
-  if (!citizenName || !contactInfo) {
-    if (!citizenName && !contactInfo) {
-      return `Sure, I can help you register a complaint for this **${category.toLowerCase()}**. Let's gather the details step-by-step.
-      
-To start, may I please have your **full name** and a **contact number or email address** to associate with this report?`;
-    } else if (!citizenName) {
-      return `Thank you for the contact info (${contactInfo}). Could you please tell me your **full name** so I can associate it with the reporter details?`;
-    } else if (!contactInfo) {
-      return `Thank you, **${citizenName}**. Could you please provide a **contact number or email address** so that the BBMP engineers can reach you for verification if needed?`;
-    }
-  }
+    // ── Step 0: Issue Discovery ──
+    // If the user made a generic request (no issue type known yet) and the
+    // conversation has NOT yet gone through the discovery question, ask first.
+    const hasAnsweredDiscovery = assistantMessages.some(
+      (m) => m.content.toLowerCase().includes("complaint regarding") || m.content.toLowerCase().includes("what is the issue")
+    );
+    if (!category && !hasAnsweredDiscovery) {
+      const q = `I'll be happy to help you register a civic complaint.\n\nTo begin, what is the complaint regarding?\n\n• Pothole\n• Water Leakage\n• Garbage Accumulation\n• Broken Streetlight\n• Other Civic Issue`;
+      return `${q}
 
-  // 2. Collect Locality/Address
-  if (!locality) {
-    return `Got it, **${citizenName}**! I have noted your contact info as **${contactInfo}**. 
-
-Now, please tell me the **exact locality, landmark, or street name** in Bengaluru where this issue is located?`;
-  }
-
-  // 3. Collect Description/Details
-  if (!description) {
-    return `Location recorded as **${locality}**. 
-
-Could you please provide a short **description of the issue**? (e.g. how large it is, is it causing any traffic gridlock, and what is its severity level: Low, Medium, High, or Critical?)`;
-  }
-
-  let authority = "Municipal Corporation Roads Department";
-  let ward = "Ward 3 - Indiranagar & Domlur";
-  
-  if (category === "Garbage Accumulation") {
-    authority = "Solid Waste Management Authority";
-    ward = "Ward 2 - Koramangala & HSR";
-  } else if (category === "Water Leakage") {
-    authority = "Water Supply & Sewerage Board";
-    ward = "Ward 2 - Koramangala & HSR";
-  } else if (category === "Broken Streetlight") {
-    authority = "Municipal Electrical Services Division";
-    ward = "Ward 1 - Hebbal & Vidyaranyapura";
-  }
-
-  const locLower = locality.toLowerCase();
-  if (locLower.includes("hebbal") || locLower.includes("vidya")) ward = "Ward 1 - Hebbal & Vidyaranyapura";
-  else if (locLower.includes("kora") || locLower.includes("hsr")) ward = "Ward 2 - Koramangala & HSR";
-  else if (locLower.includes("indira") || locLower.includes("doml")) ward = "Ward 3 - Indiranagar & Domlur";
-  else if (locLower.includes("jayan") || locLower.includes("jp na")) ward = "Ward 4 - Jayanagar & JP Nagar";
-  else if (locLower.includes("peenya")) ward = "Ward 5 - Peenya Industrial Zone";
-  else if (locLower.includes("malli") || locLower.includes("old")) ward = "Ward 6 - Malleshwaram & Old Town";
-  else if (locLower.includes("marath") || locLower.includes("mahadev")) ward = "Ward 7 - Mahadevapura Zone & Marathahalli";
-
-  // Safeguard: If user name replaces locality, reset locality to a fallback
-  if (locality === citizenName) {
-    locality = "Bengaluru City Centre";
-  }
-
-  return `Excellent! I have compiled the official BBMP intake details for your review:
-
-- **Citizen Name**: ${citizenName}
-- **Contact Info**: ${contactInfo}
-- **Defect Category**: ${category}
-- **Assigned Authority**: ${authority}
-- **Severity Level**: ${severity}
-- **Locality Zone**: ${locality}
-- **Assigned Ward**: ${ward}
-- **Description**: ${description}
-
-Please confirm if these details are correct by clicking the **"File Official Complaint"** button below.
-
-[COMPLAINT_DATA_JSON_START]
+[COMPLAINT_FLOW_JSON_START]
 {
-  "citizen_name": "${citizenName}",
-  "contact_info": "${contactInfo}",
-  "issue_type": "${category}",
-  "locality": "${locality}",
-  "ward": "${ward}",
-  "severity": "${severity}",
-  "description": "${description.replace(/"/g, '\\"')}",
-  "authority": "${authority}"
+  "nextField": "issue_type",
+  "nextQuestion": "${q.replace(/\n/g, " ")}",
+  "complaintState": {
+    "citizen_name": "",
+    "contact_info": "",
+    "locality": "",
+    "description": ""
+  }
 }
-[COMPLAINT_DATA_JSON_END]`;
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    // Default category if still unknown after discovery answer
+    if (!category) category = "Pothole";
+
+    // ── Step 1: Collect Name ──
+    if (!citizenName) {
+      const q = `Great, I'll register your **${category}** complaint. Let's do it step by step.\n\nFirst, what is your **full name**?`;
+      return `${q}
+
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "name",
+  "nextQuestion": "${q.replace(/\n/g, " ")}",
+  "complaintState": {
+    "citizen_name": "",
+    "contact_info": "",
+    "locality": "",
+    "description": ""
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    // Step 2: Collect Contact Info
+    if (!contactInfo) {
+      const q = `Thanks, **${citizenName}**. What is a **contact number or email** where the department can reach you?`;
+      return `${q}
+      
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "contact",
+  "nextQuestion": "Thanks, ${citizenName}. What is a contact number or email where the department can reach you?",
+  "complaintState": {
+    "citizen_name": "${citizenName}",
+    "contact_info": "",
+    "locality": "",
+    "description": ""
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    // Step 3: Collect Location
+    if (!locality) {
+      const q = "Got it. What is the **exact location** (street name, locality, landmark) of the issue?";
+      return `${q}
+      
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "location",
+  "nextQuestion": "${q}",
+  "complaintState": {
+    "citizen_name": "${citizenName}",
+    "contact_info": "${contactInfo}",
+    "locality": "",
+    "description": ""
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    // Step 4: Collect Description
+    if (!description) {
+      const q = "Understood. Please provide a brief **description of the issue** (e.g. details of the problem).";
+      return `${q}
+      
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "description",
+  "nextQuestion": "${q}",
+  "complaintState": {
+    "citizen_name": "${citizenName}",
+    "contact_info": "${contactInfo}",
+    "locality": "${locality}",
+    "description": ""
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    // Step 5: Ask for Optional Image
+    const lastModelMsg = assistantMessages[assistantMessages.length - 1]?.content || "";
+    const isAskingForImage = lastModelMsg.includes("image") || lastModelMsg.includes("photo");
+    const userImageResponse = latestUserMsgLower;
+
+    if (isAskingForImage && (userImageResponse.includes("no") || userImageResponse.includes("skip") || userImageResponse.includes("don't have"))) {
+      // User skips image, finalize details and complete
+      let severity = "High";
+      const descLower = description.toLowerCase();
+      if (descLower.includes("critical") || descLower.includes("flooding") || descLower.includes("danger") || descLower.includes("accident") || descLower.includes("risk")) {
+        severity = "Critical";
+      } else if (descLower.includes("medium")) {
+        severity = "Medium";
+      } else if (descLower.includes("low") || descLower.includes("minor")) {
+        severity = "Low";
+      }
+
+      let authority = "Municipal Corporation Roads Department";
+      let ward = "Ward 3 - Indiranagar & Domlur";
+      const locLower = locality.toLowerCase();
+      const isBengaluru = !locLower.includes("chennai") && !locLower.includes("salem") && !locLower.includes("pune") && !locLower.includes("kochi") && !locLower.includes("delhi") && !locLower.includes("hyderabad") && !locLower.includes("mumbai") && !locLower.includes("jaipur");
+
+      if (!isBengaluru) {
+        let cityPrefix = "Local Corporation";
+        if (locLower.includes("chennai")) cityPrefix = "Greater Chennai Corporation";
+        else if (locLower.includes("salem")) cityPrefix = "Salem Municipal Corporation";
+        else if (locLower.includes("pune")) cityPrefix = "Pune Municipal Corporation";
+        else if (locLower.includes("kochi")) cityPrefix = "Kochi Municipal Corporation";
+        else if (locLower.includes("delhi")) cityPrefix = "Municipal Corporation of Delhi";
+        else if (locLower.includes("hyderabad")) cityPrefix = "Greater Hyderabad Municipal Corporation";
+        else if (locLower.includes("mumbai")) cityPrefix = "Brihanmumbai Municipal Corporation";
+        else if (locLower.includes("jaipur")) cityPrefix = "Jaipur Municipal Corporation";
+
+        if (category === "Garbage Accumulation") {
+          authority = `${cityPrefix} - Solid Waste Management Cell`;
+        } else if (category === "Water Leakage") {
+          authority = `${cityPrefix} - Water Supply & Sewerage Department`;
+        } else if (category === "Broken Streetlight") {
+          authority = `${cityPrefix} - Electrical Engineering Division`;
+        } else {
+          authority = `${cityPrefix} - Road Infrastructure Division`;
+        }
+        ward = `${cityPrefix} - Resolved Zone`;
+      } else {
+        if (category === "Garbage Accumulation") {
+          authority = "Solid Waste Management Authority";
+          ward = "Ward 2 - Koramangala & HSR";
+        } else if (category === "Water Leakage") {
+          authority = "Water Supply & Sewerage Board";
+          ward = "Ward 2 - Koramangala & HSR";
+        } else if (category === "Broken Streetlight") {
+          authority = "Municipal Electrical Services Division";
+          ward = "Ward 1 - Hebbal & Vidyaranyapura";
+        }
+        if (locLower.includes("hebbal") || locLower.includes("vidya")) ward = "Ward 1 - Hebbal & Vidyaranyapura";
+        else if (locLower.includes("kora") || locLower.includes("hsr")) ward = "Ward 2 - Koramangala & HSR";
+        else if (locLower.includes("indira") || locLower.includes("doml")) ward = "Ward 3 - Indiranagar & Domlur";
+        else if (locLower.includes("jayan") || locLower.includes("jp na")) ward = "Ward 4 - Jayanagar & JP Nagar";
+        else if (locLower.includes("peenya")) ward = "Ward 5 - Peenya Industrial Zone";
+        else if (locLower.includes("malli") || locLower.includes("old")) ward = "Ward 6 - Malleshwaram & Old Town";
+        else if (locLower.includes("marath") || locLower.includes("mahadev")) ward = "Ward 7 - Mahadevapura Zone & Marathahalli";
+      }
+
+      const endMsg = "Thank you! I have compiled all the details. I will now generate and file your official report.";
+      return `${endMsg}
+
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "completed",
+  "nextQuestion": "${endMsg}",
+  "complaintState": {
+    "citizen_name": "${citizenName}",
+    "contact_info": "${contactInfo}",
+    "locality": "${locality}",
+    "description": "${description.replace(/"/g, '\\"')}",
+    "issue_type": "${category}",
+    "severity": "${severity}",
+    "ward": "${ward}",
+    "authority": "${authority}"
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    if (!isAskingForImage) {
+      const q = "Do you have an **image** of the issue? You can upload one, or type 'no' to skip.";
+      return `${q}
+      
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "image",
+  "nextQuestion": "${q}",
+  "complaintState": {
+    "citizen_name": "${citizenName}",
+    "contact_info": "${contactInfo}",
+    "locality": "${locality}",
+    "description": "${description}"
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+    }
+
+    // Otherwise complete flow
+    const severity = "High";
+    const authority = "Municipal Corporation Roads Department";
+    const ward = "Ward 3 - Indiranagar & Domlur";
+    const endMsg = "Thank you! I have compiled all the details. I will now generate and file your official report.";
+    return `${endMsg}
+
+[COMPLAINT_FLOW_JSON_START]
+{
+  "nextField": "completed",
+  "nextQuestion": "${endMsg}",
+  "complaintState": {
+    "citizen_name": "${citizenName}",
+    "contact_info": "${contactInfo}",
+    "locality": "${locality}",
+    "description": "${description.replace(/"/g, '\\"')}",
+    "issue_type": "${category}",
+    "severity": "${severity}",
+    "ward": "${ward}",
+    "authority": "${authority}"
+  }
+}
+[COMPLAINT_FLOW_JSON_END]`;
+  }
+
+  // Category 3 — Civic & Municipal Knowledge
+  // This branch must NOT intercept messages that are clearly problem statements
+  // (those should have been caught by Category 4 above). Only serve knowledge
+  // responses for genuine question-style messages.
+  const isCivicKnowledge =
+    /pothole|garbage|waste|trash|streetlight|street-light|water leak|water Board|sewage|utility|municipal|ward|authority|department|track|complain|reject/i.test(latestUserMsgLower);
+
+  const looksLikeKnowledgeQuestion =
+    !matchesProblemPattern &&        // not a problem statement
+    !hasCivicKeyword ||              // OR it's a genuine question
+    isQuestion;                      // treat question-form messages as Q&A
+
+  if (isCivicKnowledge && looksLikeKnowledgeQuestion && !latestUserMsgLower.includes("report") && !latestUserMsgLower.includes("register") && !latestUserMsgLower.includes("file")) {
+    if (latestUserMsgLower.includes("pothole")) {
+      return "Potholes are bowl-shaped depressions in the road pavement caused by water infiltration, sub-base erosion, temperature changes, and heavy vehicular traffic loads. When water seeps into the road cracks and is pressurized by tires, the asphalt breaks down. Municipal road infrastructure departments or local corporations are responsible for repaving and patching them.";
+    }
+    if (latestUserMsgLower.includes("garbage") || latestUserMsgLower.includes("trash") || latestUserMsgLower.includes("waste")) {
+      return "Garbage accumulation is caused by irregular solid waste collection, illegal dumping, public littering, and lack of municipal bins. Solid Waste Management divisions handle clearing trash dumps and daily street sweeps. Standard resolution timelines for public garbage dumping complaints typically range from 24 to 48 hours.";
+    }
+    if (latestUserMsgLower.includes("ward")) {
+      return "A municipal ward is a decentralized administrative subdivision within a city. Each ward represents a local electoral constituency managed by regional engineers, sanitation inspectors, and corporators. Wards help administrative authorities monitor solid waste, road works, and utility services efficiently at a localized scale.";
+    }
+    if (latestUserMsgLower.includes("water") || latestUserMsgLower.includes("leak") || latestUserMsgLower.includes("sewage")) {
+      return "Water main leaks and sewer bursts are repaired by exposing the damaged pipe section, isolating the flow, and patching or replacing the conduit. This is handled by local water supply and sewerage boards (such as BWSSB in Bengaluru, DJB in Delhi, or CMWSSB in Chennai). Resolution times vary between 12 to 36 hours depending on pipeline diameter.";
+    }
+    if (latestUserMsgLower.includes("streetlight") || latestUserMsgLower.includes("light")) {
+      return "Broken, flickering, or non-functional streetlights are serviced by the municipal corporation's Electrical Engineering Division or regional electricity supply boards. Repair squads replace bulbs, repair wiring, or fix automated timers. Inoperative streetlights are usually repaired within 24 to 48 hours of reporting.";
+    }
+    if (latestUserMsgLower.includes("road") || latestUserMsgLower.includes("repair")) {
+      return "Standard pothole filling and minor road patchwork typically take 3 to 7 days from verification. Major road repaving, resurfacing, or structural repairs can take anywhere from 2 to 4 weeks depending on the length of the road, weather conditions, and budget allocations.";
+    }
+    if (latestUserMsgLower.includes("track")) {
+      return "You can track your reported issue by entering its unique Report ID in the Operations Console on the Dashboard tab, or by navigating directly to its details page at `/report/<Report ID>`. The status, assigned engineer, department, and repair logs are updated in real-time.";
+    }
+    if (latestUserMsgLower.includes("reject")) {
+      return "If the municipal department rejects a complaint (e.g. due to incorrect mapping or department overlap), the CivicEye routing engine flags the ticket and alerts the dispatch console for manual correction.";
+    }
+    return "CivicEye AI automates dispatch to local municipal authorities: road/pothole maintenance to Road Infrastructure, water line bursts to the Water Board, and garbage accumulation to Solid Waste Management. You can file a complaint or ask questions about municipal utilities.";
+  }
+
+  // General fallback conversational reply
+  return "Greetings! I am Officer Gemini, your AI Civic Assistant. I can answer questions about municipal services, utility repair SLAs, safety dispatches, or guide you through filing a new complaint for anywhere in India. How can I help you today?";
 }
 
 async function fetchWithRetry(
@@ -369,9 +562,11 @@ async function fetchWithRetry(
 
 export async function POST(request: Request) {
   let messages: any[] = [];
+  let complaintSession: any = null;
   try {
     const body = await request.json();
     messages = body.messages;
+    complaintSession = body.complaintSession;
  
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "Missing conversation history." }, { status: 400 });
@@ -382,43 +577,112 @@ export async function POST(request: Request) {
  
     if (testMode || !apiKey) {
       console.log("Chat running in testMode or missing apiKey. Loading mock reply.");
-      await delay(800); // Simulate network latency
-      const reply = getMockChatResponse(messages);
+      await delay(800);
+      const reply = getMockChatResponse(messages, complaintSession);
       return NextResponse.json({ role: "model", content: reply });
     }
  
-    // Configure system instruction for BBMP desk intake officer
-    const systemInstructionText = `You are Officer Gemini, the AI Municipal Intake Officer at the CivicEye BBMP Desk in Bengaluru.
-Your goal is to answer citizen's municipal questions or conduct a step-by-step interview with citizens to report civic infrastructure issues (potholes, water leaks, broken streetlights, garbage heaps).
+    let systemInstructionText = "";
+    if (complaintSession && complaintSession.active) {
+      systemInstructionText = `You are Officer Gemini, the AI Civic Assistant at the CivicEye Desk.
+A complaint registration session is currently active. The application itself manages the interview state, and you are only generating the naturally phrased question or response for the current step.
 
-Guidelines:
-1. Determine the user's intent. Supported intents include:
-   - General Civic Questions: Answer normally with professional city guidance.
-   - Complaint Status Inquiry: Explain how to check report status on Dashboard or \`/report/<ID>\` URL.
-   - Repair Information: Provide average repair timelines (e.g., 24-48 hours for critical water leaks, 3-7 days for road repairs and streetlights).
-   - Authority Guidance: Explain which agency handles which issues (e.g., BBMP handles roads, lights, waste; BWSSB handles sewers/water leaks; BESCOM handles electrical lines).
-   - Emergency Safety Guidance: Guide them to BESCOM (1912) or BBMP Control Room (080-22221188) for live dangers.
-   - AI Explainability: Explain how severity is calculated or how duplicate detection works (e.g., checks 200m radius buffer).
-   - Complaint Registration: ONLY enter this mode when the citizen clearly indicates they want to report, register, or file a complaint (e.g., "I want to report...", "There is a water leakage near my house"). Merely mentioning "pothole" or "garbage" in a question does NOT trigger registration.
-2. When in Complaint Registration mode, politely gather the following fields step-by-step (one or two at a time):
-   - Citizen Name
-   - Contact Information (phone or email)
-   - Locality/Address in Bengaluru (must keep intact, do NOT overwrite with user's name)
-   - Issue Description & Severity (Low, Medium, High, Critical)
-3. Once all registration details are collected, present a summary and append the structured JSON block inside [COMPLAINT_DATA_JSON_START] and [COMPLAINT_DATA_JSON_END] tags. Do NOT output this JSON block for general questions (non-registration intents).
-   Format of the JSON block:
-   [COMPLAINT_DATA_JSON_START]
-   {
-     "citizen_name": "Citizen name provided by the user",
-     "contact_info": "Phone or email provided, or 'Not provided'",
-     "issue_type": "Pothole | Water Leakage | Garbage Accumulation | Broken Streetlight",
-     "locality": "Geographic locality or landmark in Bengaluru",
-     "ward": "Derive the closest ward name from config: 'Ward 1 - Hebbal & Vidyaranyapura' | 'Ward 2 - Koramangala & HSR' | 'Ward 3 - Indiranagar & Domlur' | 'Ward 4 - Jayanagar & JP Nagar' | 'Ward 5 - Peenya Industrial Zone' | 'Ward 6 - Malleshwaram & Old Town'",
-     "severity": "Low | Medium | High | Critical",
-     "description": "Short summary description",
-     "authority": "Municipal Corporation Roads Department | Water Supply & Sewerage Board | Solid Waste Management Authority | Municipal Electrical Services Division"
-   }
-   [COMPLAINT_DATA_JSON_END]`;
+Complaint Information:
+- Issue Type: ${complaintSession.issueType}
+- Current Step: ${complaintSession.currentStep}
+- Collected Data:
+  - Name: ${complaintSession.collectedData.name || "(Not collected yet)"}
+  - Contact: ${complaintSession.collectedData.contact || "(Not collected yet)"}
+  - Location: ${complaintSession.collectedData.location || "(Not collected yet)"}
+  - Description: ${complaintSession.collectedData.description || "(Not collected yet)"}
+
+Your task:
+- Look at the user's latest input and acknowledge it naturally (if appropriate).
+- Ask ONLY the next required question for the current step:
+  - If current step is "issue_type", ask the user what the complaint is regarding (Pothole, Water Leakage, Garbage Accumulation, Broken Streetlight).
+  - If current step is "name", ask for their full name.
+  - If current step is "contact", ask for their contact number or email.
+  - If current step is "location", ask for the exact location (street name, locality, landmark).
+  - If current step is "description", ask for a brief description of the problem.
+  - If current step is "image", ask if they have a photo of the issue to upload or want to skip.
+  - If current step is "completed", state that you have all information and are generating the report.
+
+Crucial Rules:
+- Ask ONLY one question.
+- Do NOT greet the user again.
+- Do NOT return to the welcome prompt.
+- Do NOT ask for fields that have already been collected.
+- Do NOT output any JSON block. Just natural conversational text.
+- Keep your response brief, friendly, and professional.`;
+    } else {
+      systemInstructionText = `You are Officer Gemini, the AI Civic Assistant at the CivicEye Desk.
+Your role is to assist citizens with municipal questions, utility tracking, and registering civic complaints across India.
+
+You must follow this five-level intent hierarchy for every user input:
+
+LEVEL 1 — Greeting:
+- Trigger: Simple user greetings (e.g. "hi", "hello", "good morning").
+- Workflow: Respond with a brief, friendly greeting welcoming them to the desk. Do NOT output any JSON block.
+
+LEVEL 2 — General Questions:
+- Trigger: Basic trivia, math formulas, or general knowledge (e.g. "what is 2+2", "what is an apple").
+- Workflow: Answer naturally and directly. Do NOT output any JSON block.
+
+LEVEL 3 — Civic & Municipal Knowledge:
+- Trigger: User asks questions about civic issues, municipal boards, timelines, or procedures (e.g. "what is a pothole", "what is a ward", "who handles water leaks").
+- Workflow: Provide detailed, educational answers. Do NOT output any JSON block.
+
+LEVEL 4 — Complaint Registration (Complaint Mode):
+- Trigger: The user expresses a civic problem or defect (e.g., "there is a pothole on my street", "water is leaking near my house", "garbage is not cleared") or asks to register/report an issue.
+- Workflow:
+  - STEP 0 — Issue Discovery (ONLY if the user has NOT specified what the issue is):
+    If the user says something generic like "I want to register a complaint" or "I want to report an issue" WITHOUT mentioning a specific problem, ask:
+    "I'll be happy to help you register a civic complaint. To begin, what is the complaint regarding? Examples: Pothole, Water Leakage, Garbage Accumulation, Broken Streetlight, Other."
+    Emit JSON with nextField: "issue_type". Do NOT jump directly to asking for the name.
+  - STEP 1–5 — Structured Interview (after issue type is known):
+    Collect the following details exactly ONE field at a time:
+    1. Full Name
+    2. Contact Number or Email
+    3. Exact Location (street, locality, landmark anywhere in India)
+    4. Complaint Description (sizes, duration, details)
+    5. Optional Image (ask if they have a photo or want to skip)
+
+- Crucial Rules:
+  - If the user already specified the issue type in their first message, skip Step 0 and proceed directly to Step 1 (Full Name).
+  - Do NOT ask for the issue type again once it has been established from context.
+  - Do NOT ask for severity. Infer it automatically based on description.
+  - Do NOT ask multiple questions together. Only ask the next missing field in the sequence.
+  - Inspect the conversation history. Do NOT ask for details already provided.
+  - Once the image step is resolved (by upload or skipping), output the final structured JSON block inside [COMPLAINT_FLOW_JSON_START] and [COMPLAINT_FLOW_JSON_END] tags.
+  - Format of the JSON block:
+    [COMPLAINT_FLOW_JSON_START]
+    {
+      "nextField": "issue_type | name | contact | location | description | image | completed",
+      "nextQuestion": "The natural conversational question to ask the user next",
+      "complaintState": {
+        "citizen_name": "Name provided or empty",
+        "contact_info": "Phone/email provided or empty",
+        "locality": "Location provided or empty",
+        "description": "Description provided or empty",
+        "issue_type": "Pothole | Water Leakage | Garbage Accumulation | Broken Streetlight",
+        "severity": "Low | Medium | High | Critical",
+        "ward": "BBMP Ward name for Bengaluru OR Municipal Corporation zone for other Indian cities",
+        "authority": "Assigned municipal authority"
+      }
+    }
+    [COMPLAINT_FLOW_JSON_END]
+
+LEVEL 5 — Out-of-Scope Questions:
+- Trigger: Unrelated queries (recipes, coding, politics, sports, entertainment).
+- Workflow: Respond politely. Explain that CivicEye AI specializes in civic infrastructure assistance, complaint registration, and municipal guidance. Do not hallucinate or attempt to answer.
+
+LEVEL 6 — Community Validation Check:
+- Trigger: Citizen asks if anyone else has reported the issue (e.g. "Has anyone else reported this?", "Are there other similar complaints?").
+- Workflow: If the current location (e.g. Vidyaranyapura, Koramangala, Whitefield) or issue indicates corroborating duplicate files, respond:
+  "Yes. Multiple similar complaints have already been detected in this locality. Your report has strengthened community validation and helps authorities prioritize the issue."
+  Otherwise, respond:
+  "No matching reports have been detected yet. Your complaint becomes the first recorded report for this issue."`;
+    }
  
     // Map history to Gemini format
     const contents = messages.map((m: any) => ({
@@ -435,7 +699,7 @@ Guidelines:
  
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
  
     try {
       const geminiRes = await fetchWithRetry(
@@ -469,13 +733,13 @@ Guidelines:
     } catch (apiErr: any) {
       clearTimeout(timeoutId);
       console.warn("Gemini API chat failed. Falling back to mock response. Error details:", apiErr.message || apiErr);
-      const reply = getMockChatResponse(messages);
+      const reply = getMockChatResponse(messages, complaintSession);
       return NextResponse.json({ role: "model", content: reply });
     }
  
   } catch (error) {
     console.error("Error in chat API handler:", error);
-    const reply = getMockChatResponse(messages);
+    const reply = getMockChatResponse(messages, complaintSession);
     return NextResponse.json({ role: "model", content: reply });
   }
 }

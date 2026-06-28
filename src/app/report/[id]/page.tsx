@@ -14,12 +14,15 @@ import {
   Clock,
   Compass,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  Info
 } from "lucide-react";
 import { GenerateReportResponse } from "@/types";
 import { db } from "@/lib/firebase";
+import { useDemo } from "@/components/DemoProvider";
+import { motion, AnimatePresence } from "framer-motion";
 import { doc, getDoc } from "firebase/firestore";
-import { sanitizeReportForLocalStorage, sanitizeReportsListForLocalStorage } from "@/lib/storageHelper";
+import { sanitizeReportForLocalStorage, sanitizeReportsListForLocalStorage, safeSetLocalStorageItem } from "@/lib/storageHelper";
 import dynamicImport from "next/dynamic";
 import { jsPDF } from "jspdf";
 
@@ -66,6 +69,7 @@ export default function ReportDetailPage({ params }: PageProps) {
     citizen_name?: string;
     contact_info?: string;
     description?: string;
+    supporter_count?: number;
     explainability?: {
       visual_evidence: string;
       severity_reasoning: string;
@@ -80,6 +84,121 @@ export default function ReportDetailPage({ params }: PageProps) {
       complexity: "Low" | "Medium" | "High";
     };
   } | null>(null);
+
+  const { isDemoActive, isPaused, setStep: setDemoStep, showTransitionAlert, pauseDemo, moveCursorTo, moveCursorToCoords, smoothScrollTo } = useDemo();
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+
+  const highlights = [
+    {
+      selector: ".demo-severity-card",
+      title: "Severity Assessment",
+      description: "Determines how urgently the issue should be resolved by city engineers."
+    },
+    {
+      selector: ".demo-jurisdiction-card",
+      title: "Assigned Department",
+      description: "Routes the complaint to the responsible municipal division (e.g. Roads, Water, Electricity)."
+    },
+    {
+      selector: ".demo-budget-card",
+      title: "Estimated Budget",
+      description: "AI-generated cost estimate and materials list based on historical municipal repair indices."
+    },
+    {
+      selector: ".demo-blueprint-card",
+      title: "Resolution Blueprint",
+      description: "AI-recommended repair workflow and step-by-step checklist to guide the field crew."
+    },
+    {
+      selector: ".demo-summary-card",
+      title: "Complaint Notice Draft",
+      description: "Official legal-grade notice drafted automatically by the AI for solid administrative dispatch."
+    }
+  ];
+
+  // Sequential highlights effect
+  useEffect(() => {
+    if (!isDemoActive || isPaused || loading || !report) return;
+
+    // Start with the first highlight after a short delay
+    if (highlightIndex === -1) {
+      const initTimer = setTimeout(() => {
+        setHighlightIndex(0);
+      }, 1000);
+      return () => clearTimeout(initTimer);
+    }
+
+    const currentHighlight = highlights[highlightIndex];
+    if (!currentHighlight) return;
+
+    // Clean up previous highlights first
+    highlights.forEach((hl) => {
+      const el = document.querySelector(hl.selector);
+      if (el) {
+        el.classList.remove("ring-4", "ring-electric-blue", "ring-offset-4", "ring-offset-slate-950", "shadow-[0_0_30px_rgba(0,209,255,0.4)]");
+      }
+    });
+
+    let advanceTimer: any;
+    const runHighlight = async () => {
+      const el = document.querySelector(currentHighlight.selector) as HTMLElement;
+      if (el) {
+        el.classList.add("ring-4", "ring-electric-blue", "ring-offset-4", "ring-offset-slate-950", "shadow-[0_0_30px_rgba(0,209,255,0.4)]");
+        
+        // Premium smooth scrolling
+        await smoothScrollTo(el, 1200);
+        
+        // Hover virtual cursor over center
+        await moveCursorTo(currentHighlight.selector, 800);
+        
+        // Pause 2 seconds before advancing to give judges time to read
+        advanceTimer = setTimeout(async () => {
+          if (highlightIndex < highlights.length - 1) {
+            setHighlightIndex(prev => prev + 1);
+          } else {
+            // Highlight complete: clean up and transition
+            highlights.forEach((hl) => {
+              const el = document.querySelector(hl.selector);
+              if (el) {
+                el.classList.remove("ring-4", "ring-electric-blue", "ring-offset-4", "ring-offset-slate-950", "shadow-[0_0_30px_rgba(0,209,255,0.4)]");
+              }
+            });
+            // Move cursor to center/neutral area during transition
+            await moveCursorToCoords(window.innerWidth / 2, window.innerHeight / 2, 800);
+            setDemoStep(2);
+            await showTransitionAlert("✓ Municipal Report Finalized!\nRouting to AI Orchestration...", 2000);
+            router.push(`/orchestration?reportId=${id}`);
+          }
+        }, 2000);
+      }
+    };
+    
+    runHighlight();
+
+    return () => {
+      if (advanceTimer) clearTimeout(advanceTimer);
+    };
+  }, [isDemoActive, isPaused, loading, highlightIndex, report]);
+
+  // Global manual interaction pause
+  useEffect(() => {
+    if (!isDemoActive || isPaused) return;
+    const handleUserInteraction = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.closest("button"))) {
+        if (!target.closest(".fixed")) {
+          pauseDemo();
+          console.log("Demo paused due to manual user interaction");
+        }
+      }
+    };
+    window.addEventListener("focusin", handleUserInteraction);
+    window.addEventListener("click", handleUserInteraction);
+    return () => {
+      window.removeEventListener("focusin", handleUserInteraction);
+      window.removeEventListener("click", handleUserInteraction);
+    };
+  }, [isDemoActive, isPaused]);
 
   const STATUS_STAGES = [
     { status: "Submitted", label: "Incident Submitted", desc: "Citizen visual payload logged." },
@@ -266,7 +385,7 @@ export default function ReportDetailPage({ params }: PageProps) {
       ["Priority", report.priority || "N/A"],
       ["Confidence", `${Math.round((report.confidence || 0.9) * 100)}%`],
       ["Locality Zone", report.locality || "N/A"],
-      ["Assigned Ward", report.ward || "N/A"],
+      ["Civic Jurisdiction", (report.ward || "").startsWith("Ward ") ? `BBMP ${report.ward}` : (report.ward || "N/A")],
       ["Assigned Authority", report.authority || "N/A"],
       ["GPS Coordinate", `${report.latitude ? Number(report.latitude).toFixed(5) : "12.97159"}, ${report.longitude ? Number(report.longitude).toFixed(5) : "77.59456"}`],
       ["Timestamp", report.created_at ? new Date(report.created_at).toLocaleString() : new Date().toLocaleString()]
@@ -498,14 +617,14 @@ export default function ReportDetailPage({ params }: PageProps) {
       setReport(updatedReport);
       
       try {
-        localStorage.setItem(`report_${id}`, JSON.stringify(sanitizeReportForLocalStorage(updatedReport)));
+        safeSetLocalStorageItem(`report_${id}`, JSON.stringify(sanitizeReportForLocalStorage(updatedReport)));
         const listRaw = localStorage.getItem("reports_list");
         if (listRaw) {
           const list = JSON.parse(listRaw);
           const idx = list.findIndex((r: any) => r.id === id);
           if (idx !== -1) {
             list[idx].status = nextStatus;
-            localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
+            safeSetLocalStorageItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
           }
         }
       } catch (e) {
@@ -573,14 +692,14 @@ export default function ReportDetailPage({ params }: PageProps) {
       const updated = { ...report, status: "Resolved" as any };
       setReport(updated);
       try {
-        localStorage.setItem(`report_${id}`, JSON.stringify(sanitizeReportForLocalStorage(updated)));
+        safeSetLocalStorageItem(`report_${id}`, JSON.stringify(sanitizeReportForLocalStorage(updated)));
         const listRaw = localStorage.getItem("reports_list");
         if (listRaw) {
           const list = JSON.parse(listRaw);
           const idx = list.findIndex((r: any) => r.id === id);
           if (idx !== -1) {
             list[idx].status = "Resolved";
-            localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
+            safeSetLocalStorageItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
           }
         }
       } catch {
@@ -607,7 +726,7 @@ export default function ReportDetailPage({ params }: PageProps) {
       const updated = { ...report, status: "Investigating" as any, internal_notes: notes };
       setReport(updated);
       try {
-        localStorage.setItem(`report_${id}`, JSON.stringify(sanitizeReportForLocalStorage(updated)));
+        safeSetLocalStorageItem(`report_${id}`, JSON.stringify(sanitizeReportForLocalStorage(updated)));
         const listRaw = localStorage.getItem("reports_list");
         if (listRaw) {
           const list = JSON.parse(listRaw);
@@ -615,7 +734,7 @@ export default function ReportDetailPage({ params }: PageProps) {
           if (idx !== -1) {
             list[idx].status = "Investigating";
             list[idx].internal_notes = notes;
-            localStorage.setItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
+            safeSetLocalStorageItem("reports_list", JSON.stringify(sanitizeReportsListForLocalStorage(list)));
           }
         }
       } catch {}
@@ -701,6 +820,8 @@ export default function ReportDetailPage({ params }: PageProps) {
           city: string;
           state: string;
           postal_code: string;
+          latitude?: number;
+          longitude?: number;
         } = {
           id: id,
           priority: severity as "Low" | "Medium" | "High" | "Critical",
@@ -717,6 +838,8 @@ export default function ReportDetailPage({ params }: PageProps) {
           city: "Bengaluru",
           state: "Karnataka",
           postal_code: "560038",
+          latitude: 12.97159,
+          longitude: 77.59456,
         };
         fetchedReport = mockResult;
       } else {
@@ -857,7 +980,7 @@ export default function ReportDetailPage({ params }: PageProps) {
           </h1>
           <p className="text-on-surface-variant font-display text-sm mt-3 flex items-center gap-2 font-medium">
             <MapPin className="h-4.5 w-4.5 text-electric-blue shrink-0" />
-            {report.locality}, {report.ward}
+            {report.locality}, {(report.ward || "").startsWith("Ward ") ? `BBMP ${report.ward}` : (report.ward || "")}
           </p>
         </div>
 
@@ -932,22 +1055,22 @@ export default function ReportDetailPage({ params }: PageProps) {
               <p className="text-base font-bold text-white leading-tight">{report.issue_type}</p>
             </div>
             
-            <div className="glass-md p-5 rounded-2xl border border-white/5 hover:translate-y-[-2px] transition-all">
+            <div className="glass-md p-5 rounded-2xl border border-white/5 hover:translate-y-[-2px] transition-all demo-confidence-card">
               <Clock className="h-5 w-5 text-electric-blue mb-2.5" />
               <h4 className="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">AI Confidence</h4>
               <p className="text-base font-bold text-white leading-tight">{(report.confidence || 0.98 * 100).toFixed(0)}%</p>
             </div>
 
-            <div className={`glass-md p-5 rounded-2xl border hover:translate-y-[-2px] transition-all ${getPriorityBadgeClass(report.priority || "High")}`}>
+            <div className={`glass-md p-5 rounded-2xl border hover:translate-y-[-2px] transition-all demo-severity-card ${getPriorityBadgeClass(report.priority || "High")}`}>
               <AlertTriangle className="h-5 w-5 mb-2.5" />
               <h4 className="text-[9px] font-bold uppercase tracking-wider mb-1">Risk Severity</h4>
               <p className="text-base font-bold leading-tight">{report.priority}</p>
             </div>
 
-            <div className="glass-md p-5 rounded-2xl border border-white/5 hover:translate-y-[-2px] transition-all">
+            <div className="glass-md p-5 rounded-2xl border border-white/5 hover:translate-y-[-2px] transition-all demo-jurisdiction-card">
               <Building2 className="h-5 w-5 text-electric-blue mb-2.5" />
               <h4 className="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Jurisdiction</h4>
-              <p className="text-base font-bold text-white leading-tight truncate">{report.authority.split(" ")[0]} Dept</p>
+              <p className="text-base font-bold text-white leading-tight truncate">{report.authority}</p>
             </div>
           </div>
 
@@ -999,7 +1122,7 @@ export default function ReportDetailPage({ params }: PageProps) {
 
           {/* Cost & Resource Estimation Panel */}
           {report.estimation && (
-            <div className="glass-md p-6 rounded-2xl border border-white/5 space-y-4">
+            <div className="glass-md p-6 rounded-2xl border border-white/5 space-y-4 demo-budget-card">
               <div className="flex items-center gap-2 border-b border-white/5 pb-3">
                 <span className="material-symbols-outlined text-electric-blue text-lg">payments</span>
                 <h3 className="font-display text-xs font-bold text-white uppercase tracking-wider">
@@ -1065,7 +1188,7 @@ export default function ReportDetailPage({ params }: PageProps) {
           )}
 
           {/* AI-Generated Action Plan */}
-          <div className="shimmer-border">
+          <div className="shimmer-border demo-blueprint-card">
             <div className="glass-md p-6 md:p-8 rounded-2xl border border-white/5 relative z-10">
               <div className="flex items-center gap-3 mb-6">
                 <span className="material-symbols-outlined text-electric-blue" style={{ fontVariationSettings: "'FILL' 1" }}>
@@ -1086,6 +1209,25 @@ export default function ReportDetailPage({ params }: PageProps) {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Community Validation Summary */}
+          <div className="glass-md p-6 md:p-8 rounded-2xl border border-white/5 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-cyan-400 text-lg">fact_check</span>
+              <h3 className="font-display text-base font-bold text-white">Community Validation Summary</h3>
+            </div>
+            <div className="p-4 bg-slate-900/60 rounded-xl border border-white/5 text-left">
+              {report.supporter_count && report.supporter_count > 1 ? (
+                <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                  This issue has also been independently reported by nearby citizens. The reports have been clustered together to reduce duplicate work orders and improve municipal prioritization.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-400 leading-relaxed font-sans italic">
+                  No additional community confirmations have been detected yet. This report will act as the initial community reference.
+                </p>
+              )}
             </div>
           </div>
 
@@ -1132,6 +1274,62 @@ export default function ReportDetailPage({ params }: PageProps) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Community Validation Card */}
+          <div className="glass-md p-6 rounded-2xl border border-white/5 space-y-4">
+            <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+              <span className="material-symbols-outlined text-electric-blue text-lg">groups</span>
+              <h3 className="font-display text-xs font-bold text-white uppercase tracking-wider">
+                Community Validation
+              </h3>
+            </div>
+            
+            <div className="space-y-3.5 text-left">
+              <div>
+                <span className="text-[9px] font-bold text-on-surface-variant uppercase block font-mono">Community Status</span>
+                {report.supporter_count && report.supporter_count > 1 ? (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold mt-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Community Verified</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold mt-1 font-sans">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span>Awaiting additional community confirmations.</span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <span className="text-[9px] font-bold text-on-surface-variant uppercase block font-mono">Supporting Reports</span>
+                <span className="text-xs font-semibold text-white block mt-1">
+                  {report.supporter_count && report.supporter_count > 1 
+                    ? `${report.supporter_count} nearby matching reports` 
+                    : "1 initial reference report"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[9px] font-bold text-on-surface-variant uppercase block font-mono">Verification Confidence</span>
+                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded border inline-block mt-1 ${
+                  report.supporter_count && report.supporter_count > 1
+                    ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5"
+                    : "text-slate-400 border-slate-700/50 bg-slate-900"
+                }`}>
+                  {report.supporter_count && report.supporter_count > 1 ? "High" : "Low"}
+                </span>
+              </div>
+
+              <div className="border-t border-white/5 pt-3">
+                <span className="text-[9px] font-bold text-on-surface-variant uppercase block font-mono">Validation Basis</span>
+                <p className="text-xs text-slate-300 leading-relaxed mt-1 font-sans">
+                  {report.supporter_count && report.supporter_count > 1 
+                    ? "Multiple independent reports detected within the same locality, clustering to reduce duplicate work orders."
+                    : "Single citizen report filed. System scanning for corroborating nearby dispatches."}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1397,11 +1595,11 @@ export default function ReportDetailPage({ params }: PageProps) {
               {/* Grid Location Components */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <span className="text-[9px] font-bold text-on-surface-variant uppercase block font-mono">Nearest Ward</span>
+                  <span className="text-[9px] font-bold text-on-surface-variant uppercase block font-mono">Civic Jurisdiction</span>
                   <span className={`font-semibold block truncate ${
                     !report.ward || report.ward.includes("Unknown") ? "text-amber-400 font-bold" : "text-slate-200"
                   }`}>
-                    {report.ward || "Unknown / Unable to Determine"}
+                    {(report.ward || "").startsWith("Ward ") ? `BBMP ${report.ward}` : (report.ward || "Unknown / Unable to Determine")}
                   </span>
                 </div>
                 <div>
@@ -1450,7 +1648,7 @@ export default function ReportDetailPage({ params }: PageProps) {
           </div>
 
           {/* Legal Notice Complaint Box */}
-          <div className="glass-md p-6 rounded-2xl border border-white/5 flex flex-col">
+          <div className="glass-md p-6 rounded-2xl border border-white/5 flex flex-col demo-summary-card">
             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
               <h3 className="font-display text-xs font-bold text-white flex items-center gap-2">
                 <FileText className="h-4.5 w-4.5 text-electric-blue" />
@@ -1494,6 +1692,30 @@ export default function ReportDetailPage({ params }: PageProps) {
           </span>
         </div>
       )}
+
+      {/* Guided Tour Highlight Caption Card */}
+      <AnimatePresence>
+        {isDemoActive && highlightIndex >= 0 && highlightIndex < highlights.length && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-28 left-6 right-6 md:left-1/2 md:right-auto md:-translate-x-1/2 z-50 max-w-md w-full glass-lg rounded-2xl border border-electric-blue/40 p-5 shadow-2xl flex flex-col gap-2 bg-slate-950/90 backdrop-blur-md"
+          >
+            <div className="flex justify-between items-center border-b border-white/5 pb-2">
+              <span className="text-[10px] font-mono font-bold text-electric-blue uppercase tracking-wider flex items-center gap-1.5">
+                <Info className="h-3 w-3" /> {highlights[highlightIndex].title}
+              </span>
+              <span className="text-[9px] font-mono text-slate-500">
+                {highlightIndex + 1} of {highlights.length}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              {highlights[highlightIndex].description}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

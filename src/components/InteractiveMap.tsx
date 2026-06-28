@@ -20,8 +20,10 @@ interface InteractiveMapProps {
     image_url?: string;
   }[];
   draggable?: boolean;
+  showUserMarker?: boolean;
   onMarkerDragEnd?: (lat: number, lng: number) => void;
   onMapClick?: (lat: number, lng: number) => void;
+  selectedId?: string;
 }
 
 export default function InteractiveMap({
@@ -29,8 +31,10 @@ export default function InteractiveMap({
   zoom,
   markers = [],
   draggable = false,
+  showUserMarker = true,
   onMarkerDragEnd,
   onMapClick,
+  selectedId,
 }: InteractiveMapProps) {
   const router = useRouter();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -59,15 +63,21 @@ export default function InteractiveMap({
   };
 
   // Setup Custom SVGs as DivIcons to bypass Webpack default image issues
-  const createCustomIcon = (severity: string, isDraggablePin = false) => {
+  const createCustomIcon = (severity: string, isDraggablePin = false, isSelected = false) => {
     const isCritical = (severity || "").toLowerCase() === "critical";
     const isHigh = (severity || "").toLowerCase() === "high";
     const color = isDraggablePin ? "#a78bfa" : isCritical ? "#ef4444" : isHigh ? "#f59e0b" : "#3b82f6";
-    const size = isDraggablePin ? 38 : 30;
-    const innerSize = isDraggablePin ? 18 : 14;
+    
+    // Scale up slightly if selected for premium visualization
+    const size = isDraggablePin ? 38 : isSelected ? 36 : 30;
+    const innerSize = isDraggablePin ? 18 : isSelected ? 16 : 14;
 
     const svgHtml = `
       <div style="position: relative; width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center;">
+        ${isSelected ? `
+          <!-- Smooth highlight ring -->
+          <span style="position: absolute; width: ${size + 10}px; height: ${size + 10}px; border-radius: 50%; border: 2px solid ${color}; box-shadow: 0 0 12px ${color}; opacity: 0.8; animation: selected-pulse 2s infinite ease-in-out;"></span>
+        ` : ''}
         <span style="position: absolute; width: ${size}px; height: ${size}px; border-radius: 50%; background-color: ${color}; opacity: 0.35; transform: scale(1); animation: marker-ping 1.5s infinite ease-in-out;"></span>
         <div style="width: ${innerSize}px; height: ${innerSize}px; border-radius: 50%; background-color: ${color}; border: 2.5px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 10; display: flex; align-items: center; justify-content: center;">
           ${isDraggablePin ? '<div style="width: 5px; height: 5px; border-radius: 50%; background-color: white;"></div>' : ''}
@@ -77,7 +87,7 @@ export default function InteractiveMap({
 
     return L.divIcon({
       html: svgHtml,
-      className: "custom-leaflet-marker",
+      className: `custom-leaflet-marker ${isSelected ? 'selected-marker' : ''}`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
@@ -128,7 +138,21 @@ export default function InteractiveMap({
 
     return () => {
       if (leafletMap.current) {
-        leafletMap.current.remove();
+        try {
+          if (activeMarker.current) {
+            activeMarker.current.remove();
+            activeMarker.current = null;
+          }
+          if (markerGroup.current) {
+            markerGroup.current.clearLayers();
+            markerGroup.current = null;
+          }
+          leafletMap.current.stop();
+          leafletMap.current.off();
+          leafletMap.current.remove();
+        } catch (e) {
+          console.warn("Leaflet cleanup error:", e);
+        }
         leafletMap.current = null;
       }
     };
@@ -137,7 +161,11 @@ export default function InteractiveMap({
   // Update Center and Zoom dynamically
   useEffect(() => {
     if (leafletMap.current) {
-      leafletMap.current.setView(center, zoom, { animate: true, duration: 1 });
+      try {
+        leafletMap.current.setView(center, zoom, { animate: false });
+      } catch (e) {
+        console.warn("Leaflet setView error:", e);
+      }
     }
   }, [center[0], center[1], zoom]);
 
@@ -146,7 +174,7 @@ export default function InteractiveMap({
     if (!leafletMap.current) return;
 
     // 1. Draggable Citizen report pin
-    if (draggable) {
+    if (draggable && showUserMarker) {
       if (activeMarker.current) {
         activeMarker.current.setLatLng(center);
       } else {
@@ -175,8 +203,9 @@ export default function InteractiveMap({
 
       markers.forEach((m) => {
         if (m.latitude && m.longitude) {
+          const isSelected = selectedId !== undefined && m.id === selectedId;
           const mMarker = L.marker([m.latitude, m.longitude], {
-            icon: createCustomIcon(m.severity, false),
+            icon: createCustomIcon(m.severity, false, isSelected),
           });
 
           // Popup HTML structure matching dark theme
@@ -209,10 +238,28 @@ export default function InteractiveMap({
         }
       });
     }
-  }, [markers, draggable, center[0], center[1]]);
+  }, [markers, draggable, showUserMarker, center[0], center[1], selectedId]);
 
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-xl border border-white/10 z-0 bg-slate-950/60">
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes selected-pulse {
+          0% { transform: scale(0.92); opacity: 0.8; }
+          50% { transform: scale(1.08); opacity: 0.9; }
+          100% { transform: scale(0.92); opacity: 0.8; }
+        }
+        @keyframes marker-ping {
+          0% { transform: scale(0.8); opacity: 0.5; }
+          100% { transform: scale(1.5); opacity: 0; }
+        }
+        .custom-leaflet-marker {
+          transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .custom-leaflet-marker:hover {
+          transform: scale(1.18) !important;
+          z-index: 1000 !important;
+        }
+      `}} />
       <div ref={mapContainerRef} className="w-full h-full min-h-[300px]" />
     </div>
   );

@@ -1,136 +1,47 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Eye, ShieldAlert, Cpu, Landmark, Users, Award } from "lucide-react";
+import { ArrowRight, Eye, ShieldAlert, Cpu, Landmark, Users, Award, CheckCircle2, Navigation, X } from "lucide-react";
 import * as THREE from "three";
+import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
+import { useDemo } from "@/components/DemoProvider";
+import { demoScenarios } from "@/constants/demoScenarios";
 
 export default function Home() {
+  const router = useRouter();
+  const { startDemo } = useDemo();
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [selectedScenario, setSelectedScenario] = useState("pothole");
+
   const threeContainerRef = useRef<HTMLDivElement>(null);
-  const shaderContainerRef = useRef<HTMLDivElement>(null);
+  const shouldReduceMotion = useReducedMotion();
 
+  // Framer Motion variants for Hero entrance
+  const containerVariants = {
+    hidden: {},
+    visible: {
+      transition: {
+        staggerChildren: shouldReduceMotion ? 0 : 0.1,
+      },
+    },
+  };
 
-  // Load WebGL background shader client-side
-  useEffect(() => {
-    if (!shaderContainerRef.current) return;
-
-    const container = shaderContainerRef.current;
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    container.appendChild(renderer.domElement);
-
-    const uniforms = {
-      u_time: { value: 0.0 },
-      u_resolution: { value: new THREE.Vector2(width, height) },
-      u_mouse: { value: new THREE.Vector2(width / 2, height / 2) },
-    };
-
-    const geometry = new THREE.PlaneGeometry(2, 2);
-    const material = new THREE.ShaderMaterial({
-      uniforms: uniforms,
-      vertexShader: `
-        varying vec2 v_texCoord;
-        void main() {
-          v_texCoord = uv;
-          gl_Position = vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        precision highp float;
-        uniform float u_time;
-        uniform vec2 u_resolution;
-        uniform vec2 u_mouse;
-        varying vec2 v_texCoord;
-
-        float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-        }
-
-        float noise(vec2 p) {
-          vec2 i = floor(p);
-          vec2 f = fract(p);
-          vec2 u = f * f * (3.0 - 2.0 * f);
-          return mix(mix(hash(i + vec2(0.0, 0.0)), hash(i + vec2(1.0, 0.0)), u.x),
-                     mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
-        }
-
-        void main() {
-          vec2 uv = v_texCoord;
-          vec2 centered_uv = (uv - 0.5) * vec2(u_resolution.x / u_resolution.y, 1.0);
-          
-          // Deep Midnight Base
-          vec3 color = vec3(0.02, 0.03, 0.05);
-          
-          // Grid
-          vec2 grid_uv = uv * 40.0;
-          float grid = smoothstep(0.45, 0.5, abs(sin(grid_uv.x) * sin(grid_uv.y)));
-          color += vec3(0.0, 0.4, 1.0) * grid * 0.02;
-          
-          // Noise cloud movement
-          float n = noise(centered_uv * 3.0 - u_time * 0.2);
-          color += vec3(0.0, 0.2, 0.4) * n * 0.15;
-          
-          // Mouse interaction glow
-          vec2 mouse_uv = (u_mouse / u_resolution - 0.5) * vec2(u_resolution.x / u_resolution.y, 1.0);
-          float dist = length(centered_uv - mouse_uv);
-          float mouse_glow = 0.015 / (dist + 0.1);
-          color += vec3(0.0, 0.6, 1.0) * mouse_glow;
-          
-          // Subtle Scanlines
-          color *= 0.98 + 0.02 * sin(uv.y * u_resolution.y * 0.5);
-          
-          gl_FragColor = vec4(color, 1.0);
-        }
-      `,
-    });
-
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-
-    let animationFrameId: number;
-    const animate = (time: number) => {
-      animationFrameId = requestAnimationFrame(animate);
-      uniforms.u_time.value = time * 0.001;
-      renderer.render(scene, camera);
-    };
-    animate(0);
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = rect.height - (e.clientY - rect.top);
-      uniforms.u_mouse.value.set(x, y);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-
-    const handleResize = () => {
-      const w = container.clientWidth || window.innerWidth;
-      const h = container.clientHeight || window.innerHeight;
-      renderer.setSize(w, h);
-      uniforms.u_resolution.value.set(w, h);
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("resize", handleResize);
-      cancelAnimationFrame(animationFrameId);
-      if (container && renderer.domElement) {
-        container.removeChild(renderer.domElement);
-      }
-      geometry.dispose();
-      material.dispose();
-      renderer.dispose();
-    };
-  }, []);
+  const itemVariants = {
+    hidden: { 
+      opacity: 0, 
+      y: shouldReduceMotion ? 0 : 15 
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { 
+        duration: 0.8, 
+        ease: [0.16, 1, 0.3, 1] as const
+      },
+    },
+  };
 
   // Load Three.js 3D Constellation effect client-side
   useEffect(() => {
@@ -150,9 +61,10 @@ export default function Home() {
     container.appendChild(renderer.domElement);
 
     // Create particles
-    const particleCount = 340;
+    const particleCount = 204;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
     const velocities: { x: number; y: number; z: number }[] = [];
     const baseVelocities: { x: number; y: number; z: number }[] = [];
 
@@ -172,15 +84,21 @@ export default function Home() {
 
       velocities.push({ x: vx, y: vy, z: vz });
       baseVelocities.push({ x: vx, y: vy, z: vz });
+
+      // Predominantly electric blue/cyan variations
+      colors[i * 3] = 0.0;
+      colors[i * 3 + 1] = 0.8 + Math.random() * 0.2; // 0.8 to 1.0 green channel
+      colors[i * 3 + 2] = 1.0; // 1.0 blue channel
     }
 
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
     const material = new THREE.PointsMaterial({
-      color: 0x00d1ff,
-      size: 0.6,
+      size: 0.65,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.85,
+      vertexColors: true,
       blending: THREE.AdditiveBlending,
     });
 
@@ -189,10 +107,10 @@ export default function Home() {
 
     // Create line connections between close particles
     const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x4285f4,
       transparent: true,
-      opacity: 0.16,
+      vertexColors: true,
       blending: THREE.AdditiveBlending,
+      opacity: 0.5, // overall max opacity multiplier
     });
 
     let lineSegments = new THREE.LineSegments();
@@ -202,6 +120,7 @@ export default function Home() {
 
     // Mouse Tracking for Particle Interactions
     const mouse = { x: 0, y: 0, active: false };
+    const smoothMouse = { x: 0, y: 0 };
     const ripple = { x: 0, y: 0, z: 0, radius: 0, active: false };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -257,14 +176,18 @@ export default function Home() {
       camera.position.y = Math.cos(driftTime * 0.8) * 4;
       camera.lookAt(scene.position);
 
-      // Rotate entire constellation system based on cursor drift
+      // Interpolate mouse coordinates (lerp) for smooth easing
       if (mouse.active) {
-        targetRotationY = mouse.x * 0.25;
-        targetRotationX = -mouse.y * 0.25;
+        smoothMouse.x += (mouse.x - smoothMouse.x) * 0.08;
+        smoothMouse.y += (mouse.y - smoothMouse.y) * 0.08;
       } else {
-        targetRotationY = 0;
-        targetRotationX = 0;
+        smoothMouse.x += (0 - smoothMouse.x) * 0.04;
+        smoothMouse.y += (0 - smoothMouse.y) * 0.04;
       }
+
+      // Rotate entire constellation system based on smooth cursor coordinates
+      targetRotationY = smoothMouse.x * 0.25;
+      targetRotationX = -smoothMouse.y * 0.25;
 
       particles.rotation.y += (targetRotationY - particles.rotation.y) * 0.04 + 0.0008;
       particles.rotation.x += (targetRotationX - particles.rotation.x) * 0.04 + 0.0004;
@@ -273,12 +196,12 @@ export default function Home() {
 
       const posArr = posAttr.array as Float32Array;
 
-      // Map mouse NDC coordinates to 3D space near coordinates
+      // Map smooth mouse NDC coordinates to 3D space
       const fovRad = (camera.fov * Math.PI) / 360;
       const halfHeight = 30 * Math.tan(fovRad);
       const halfWidth = halfHeight * (width / height);
-      const mouseX3D = mouse.x * halfWidth;
-      const mouseY3D = mouse.y * halfHeight;
+      const mouseX3D = smoothMouse.x * halfWidth;
+      const mouseY3D = smoothMouse.y * halfHeight;
 
       // Transform mouse position to local space of particles group
       const mouseVec = new THREE.Vector3(mouseX3D, mouseY3D, 0);
@@ -349,8 +272,9 @@ export default function Home() {
       }
       posAttr.needsUpdate = true;
 
-      // Build connection lines dynamically
+      // Build connection lines dynamically with distance-based fading (vertex colors)
       const linePositions: number[] = [];
+      const lineColors: number[] = [];
       for (let i = 0; i < particleCount; i++) {
         // Connect particles to each other
         for (let j = i + 1; j < particleCount; j++) {
@@ -360,20 +284,40 @@ export default function Home() {
           const distSq = dx * dx + dy * dy + dz * dz;
 
           if (distSq < 64) { // Connect if distance < 8 units
+            const dist = Math.sqrt(distSq);
+            const opacity = Math.max(0, 1 - dist / 8);
+            
             linePositions.push(posArr[i * 3], posArr[i * 3 + 1], posArr[i * 3 + 2]);
             linePositions.push(posArr[j * 3], posArr[j * 3 + 1], posArr[j * 3 + 2]);
+
+            // Translucent electric-blue connecting colors fading to black/transparent
+            const r = 0.0 * opacity;
+            const g = 0.52 * opacity;
+            const b = 1.0 * opacity;
+
+            lineColors.push(r, g, b);
+            lineColors.push(r, g, b);
           }
         }
 
-        // Connect close particles to the mouse cursor directly (creates spiderweb/pull animation)
+        // Connect close particles to the mouse cursor directly
         if (mouse.active) {
           const dx = posArr[i * 3] - mouseVec.x;
           const dy = posArr[i * 3 + 1] - mouseVec.y;
           const dz = posArr[i * 3 + 2] - mouseVec.z;
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
           if (dist < 10) {
+            const opacity = Math.max(0, 1 - dist / 10);
+            
             linePositions.push(posArr[i * 3], posArr[i * 3 + 1], posArr[i * 3 + 2]);
             linePositions.push(mouseVec.x, mouseVec.y, mouseVec.z);
+
+            const r = 0.0 * opacity;
+            const g = 0.82 * opacity; // slightly brighter cyan for active pointer lines
+            const b = 1.0 * opacity;
+
+            lineColors.push(r, g, b);
+            lineColors.push(r, g, b);
           }
         }
       }
@@ -383,6 +327,10 @@ export default function Home() {
       lineGeometry.setAttribute(
         "position",
         new THREE.Float32BufferAttribute(linePositions, 3)
+      );
+      lineGeometry.setAttribute(
+        "color",
+        new THREE.Float32BufferAttribute(lineColors, 3)
       );
       lineSegments = new THREE.LineSegments(lineGeometry, lineMaterial);
       scene.add(lineSegments);
@@ -422,11 +370,14 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex flex-col bg-transparent text-on-surface overflow-x-hidden pt-20 relative">
-      {/* WebGL Shader Background Layer */}
-      <div
-        ref={shaderContainerRef}
-        className="fixed inset-0 z-[-2] pointer-events-none opacity-50 w-full h-full"
-      />
+      {/* Dynamic CSS Gradient Background Layer */}
+      <div className="fixed inset-0 z-[-2] pointer-events-none opacity-60 bg-slate-950 w-full h-full">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,209,255,0.08)_0%,transparent_70%)] opacity-70" />
+        <div className="absolute top-[20%] left-[10%] w-[50vw] h-[50vh] rounded-full bg-electric-blue/5 blur-[120px]" />
+      </div>
+
+      {/* Radial-Masked Structured Grid Layer */}
+      <div className="fixed inset-0 z-[-2] pointer-events-none opacity-30 bg-grid-glow w-full h-full" />
 
       {/* Three.js Neural Network Layer */}
       <div
@@ -435,49 +386,153 @@ export default function Home() {
       />
 
       {/* Hero Section */}
-      <section className="relative min-h-[85vh] flex flex-col items-center justify-center text-center px-6 md:px-12 overflow-hidden py-16">
+      <section className="relative min-h-[95vh] flex flex-col items-center justify-center text-center px-6 md:px-12 overflow-hidden py-20">
 
         {/* Ambient spotlight behind content */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-gradient-to-tr from-electric-blue/10 to-violet-600/10 rounded-full blur-[100px] -z-10 pointer-events-none" />
+        <div 
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] sm:w-[900px] h-[350px] sm:h-[900px] bg-gradient-to-tr from-electric-blue/15 to-transparent rounded-full blur-[150px] -z-10 pointer-events-none animate-pulse"
+          style={{ animationDuration: "10s" }}
+        />
 
-        <div className="relative z-10 max-w-4xl mx-auto space-y-8 animate-entrance" style={{ animationDelay: "0.1s" }}>
+        <motion.div 
+          className="relative z-10 max-w-5xl mx-auto space-y-12"
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+        >
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/80 border border-white/5 backdrop-blur-md text-[11px] font-mono tracking-widest text-electric-blue uppercase">
+          <motion.div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/80 border border-white/5 backdrop-blur-md text-[11px] font-mono tracking-widest text-electric-blue uppercase" variants={itemVariants}>
             <span className="w-1.5 h-1.5 rounded-full bg-electric-blue animate-pulse"></span>
             Civic Intelligence Platform
-          </div>
+          </motion.div>
 
           {/* Heading */}
-          <h1 className="font-display text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-white leading-none">
-            The future of <br className="hidden sm:inline" />
-            <span className="bg-gradient-to-r from-electric-blue via-[#00F0FF] to-violet-400 bg-clip-text text-transparent">
+          <motion.h1 
+            className="font-display text-5xl sm:text-7xl md:text-8xl lg:text-[5.75rem] font-bold tracking-tighter text-white leading-[0.95] max-w-4xl mx-auto"
+            variants={itemVariants}
+          >
+            <span className="bg-gradient-to-b from-white via-white to-white/40 bg-clip-text text-transparent">
+              The future of
+            </span>
+            <br className="hidden sm:inline" />
+            <span className="bg-gradient-to-r from-electric-blue via-[#00F0FF] to-cyan-300 bg-clip-text text-transparent filter drop-shadow-[0_0_30px_rgba(0,209,255,0.2)]">
               civic intelligence.
             </span>
-          </h1>
+          </motion.h1>
 
           {/* Subheading */}
-          <p className="font-display text-base sm:text-xl text-on-surface-variant max-w-2xl mx-auto font-medium opacity-80 leading-relaxed">
+          <motion.p 
+            className="font-display text-lg sm:text-2xl text-on-surface-variant max-w-3xl mx-auto font-medium opacity-90 leading-relaxed"
+            variants={itemVariants}
+          >
             AI-powered civic reporting for a smarter, more resilient city. Log defects, track departmental dispatches, and audit ward scores.
-          </p>
+          </motion.p>
 
           {/* CTAs */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6">
-            <Link
-              href="/report"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-electric-blue hover:brightness-110 active:scale-95 text-background rounded-xl font-bold text-base transition-all shadow-xl shadow-electric-blue/20"
+          <motion.div 
+            className="flex flex-col items-center justify-center gap-6 pt-4"
+            variants={itemVariants}
+          >
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-5 w-full">
+              <motion.div
+                whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+                whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+                className="w-full sm:w-auto"
+              >
+                <Link
+                  href="/report"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-10 py-5 btn-premium-glow rounded-xl font-bold text-base transition-all"
+                >
+                  <ShieldAlert className="h-5 w-5" />
+                  Report an Issue
+                </Link>
+              </motion.div>
+              
+              <motion.div
+                whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+                whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+                className="w-full sm:w-auto"
+              >
+                <Link
+                  href="/dashboard"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-10 py-5 glass-md text-on-surface hover:text-white hover:border-electric-blue/40 rounded-xl font-bold text-base transition-all shadow-lg"
+                >
+                  View Dashboard
+                  <ArrowRight className="h-4 w-4 text-electric-blue animate-pulse" />
+                </Link>
+              </motion.div>
+            </div>
+
+            <motion.div
+              whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+              whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+              className="w-full sm:w-auto"
             >
-              <ShieldAlert className="h-5 w-5" />
-              Report an Issue
-            </Link>
-            <Link
-              href="/dashboard"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 glass-md text-on-surface hover:text-white hover:border-electric-blue/40 rounded-xl font-bold text-base transition-all"
-            >
-              View Dashboard
-              <ArrowRight className="h-4 w-4 text-electric-blue" />
-            </Link>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => setIsWelcomeModalOpen(true)}
+                className="w-full sm:w-[380px] inline-flex flex-col items-center justify-center px-10 py-4 glass-md border border-electric-blue/30 text-white rounded-xl hover:border-electric-blue hover:text-white transition-all shadow-lg hover:shadow-electric-blue/10 bg-slate-900/40"
+              >
+                <span className="font-bold text-base flex items-center gap-2">
+                  🎬 Judge Demo Mode
+                </span>
+                <span className="text-[10px] text-slate-400 mt-1 font-normal font-sans">
+                  A guided walkthrough of CivicEye AI's complete workflow.
+                </span>
+              </button>
+            </motion.div>
+          </motion.div>
+
+          {/* Horizontal Visual Workflow Storytelling */}
+          <motion.div 
+            className="relative max-w-5xl mx-auto pt-16 border-t border-white/5"
+            variants={itemVariants}
+          >
+            {/* Animated SVG/CSS flowing pipeline background line */}
+            <div className="absolute top-[80px] left-[15%] right-[15%] h-[2px] bg-gradient-to-r from-electric-blue/5 via-electric-blue/30 to-electric-blue/5 hidden md:block flow-pulse-line z-0 pointer-events-none" />
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+              {/* Step 1 */}
+              <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-3 p-6 rounded-2xl glass-md hover:border-electric-blue/20 transition-all duration-300 group shadow-lg shadow-black/10">
+                <div className="w-12 h-12 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center text-electric-blue shrink-0 group-hover:scale-105 group-hover:border-electric-blue/40 transition-all duration-300 z-10 relative">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="font-display text-base font-bold text-white group-hover:text-electric-blue transition-colors mb-1">1. Snap & File</h4>
+                  <p className="text-xs text-on-surface-variant leading-relaxed opacity-85">
+                    Submit a photo or describe the defect. Officer Gemini analyzes the incident details in seconds.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-3 p-6 rounded-2xl glass-md hover:border-electric-blue/20 transition-all duration-300 group shadow-lg shadow-black/10">
+                <div className="w-12 h-12 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center text-electric-blue shrink-0 group-hover:scale-105 group-hover:border-electric-blue/40 transition-all duration-300 z-10 relative">
+                  <Cpu className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="font-display text-base font-bold text-white group-hover:text-electric-blue transition-colors mb-1">2. Verify & Route</h4>
+                  <p className="text-xs text-on-surface-variant leading-relaxed opacity-85">
+                    Our multi-agent routing instantly maps coordinates and dispatches directly to the responsible division.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-3 p-6 rounded-2xl glass-md hover:border-electric-blue/20 transition-all duration-300 group shadow-lg shadow-black/10">
+                <div className="w-12 h-12 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center text-electric-blue shrink-0 group-hover:scale-105 group-hover:border-electric-blue/40 transition-all duration-300 z-10 relative">
+                  <Navigation className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="font-display text-base font-bold text-white group-hover:text-electric-blue transition-colors mb-1">3. Resolve & Track</h4>
+                  <p className="text-xs text-on-surface-variant leading-relaxed opacity-85">
+                    Monitor live updates, assigned engineers, and official resolution logs in your Operations Console.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
       </section>
 
       {/* Live Product Preview */}
@@ -526,8 +581,11 @@ export default function Home() {
             </div>
 
             {/* Simulated Live Interface HUD Mockup */}
-            <div className="shimmer-border">
-              <div className="glass-lg p-6 space-y-6 rounded-xl border border-white/10">
+            <div className="shimmer-border rounded-2xl shadow-2xl">
+              <div className="glass-lg p-6 space-y-6 rounded-2xl border border-white/10 relative overflow-hidden">
+                {/* Laser scan lines */}
+                <div className="scanning-line" />
+
                 <div className="flex justify-between items-center border-b border-white/5 pb-3">
                   <h3 className="font-display text-xs font-bold text-on-surface-variant uppercase tracking-wider">
                     Recent Incidents Feed
@@ -605,7 +663,13 @@ export default function Home() {
         
         <div className="grid md:grid-cols-3 gap-6">
           {/* Feature 1 */}
-          <div className="glass-md p-8 rounded-[2rem] group hover:border-electric-blue/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[250px]">
+          <motion.div 
+            className="glass-md p-8 rounded-[2rem] group hover:border-electric-blue/20 hover:scale-[1.02] transition-all duration-500 relative overflow-hidden flex flex-col justify-between min-h-[260px] glass-hover-glow shadow-xl shadow-black/10"
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+          >
             <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-electric-blue/5 rounded-full blur-2xl group-hover:bg-electric-blue/15 transition-colors"></div>
             <div className="mb-6 w-12 h-12 rounded-2xl bg-electric-blue/10 flex items-center justify-center text-electric-blue shrink-0">
               <Eye className="h-6 w-6" />
@@ -618,10 +682,16 @@ export default function Home() {
                 Visual models analyze photos instantly, verifying structure damage and flagging category types with detailed severity matrices.
               </p>
             </div>
-          </div>
+          </motion.div>
 
           {/* Feature 2 */}
-          <div className="glass-md p-8 rounded-[2rem] group hover:border-electric-blue/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[250px]">
+          <motion.div 
+            className="glass-md p-8 rounded-[2rem] group hover:border-electric-blue/20 hover:scale-[1.02] transition-all duration-500 relative overflow-hidden flex flex-col justify-between min-h-[260px] glass-hover-glow shadow-xl shadow-black/10"
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, delay: shouldReduceMotion ? 0 : 0.1, ease: "easeOut" }}
+          >
             <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-[#00F0FF]/5 rounded-full blur-2xl group-hover:bg-[#00F0FF]/15 transition-colors"></div>
             <div className="mb-6 w-12 h-12 rounded-2xl bg-[#00F0FF]/10 flex items-center justify-center text-[#00F0FF] shrink-0">
               <Cpu className="h-6 w-6" />
@@ -634,23 +704,29 @@ export default function Home() {
                 Converts citizen inputs and visual clues into structured legal drafts ready for municipal administration portals in real-time.
               </p>
             </div>
-          </div>
+          </motion.div>
 
           {/* Feature 3 */}
-          <div className="glass-md p-8 rounded-[2rem] group hover:border-electric-blue/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[250px]">
-            <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-violet-600/5 rounded-full blur-2xl group-hover:bg-violet-600/15 transition-colors"></div>
-            <div className="mb-6 w-12 h-12 rounded-2xl bg-violet-600/10 flex items-center justify-center text-violet-400 shrink-0">
+          <motion.div 
+            className="glass-md p-8 rounded-[2rem] group hover:border-electric-blue/20 hover:scale-[1.02] transition-all duration-500 relative overflow-hidden flex flex-col justify-between min-h-[260px] glass-hover-glow shadow-xl shadow-black/10"
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, delay: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+          >
+            <div className="absolute -right-8 -bottom-8 w-24 h-24 bg-electric-blue/5 rounded-full blur-2xl group-hover:bg-electric-blue/15 transition-colors"></div>
+            <div className="mb-6 w-12 h-12 rounded-2xl bg-electric-blue/10 flex items-center justify-center text-electric-blue shrink-0">
               <Users className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="font-display text-xl font-bold text-white mb-2 group-hover:text-violet-400 transition-colors">
+              <h3 className="font-display text-xl font-bold text-white mb-2 group-hover:text-electric-blue transition-colors">
                 Authority Routing
               </h3>
               <p className="text-on-surface-variant text-sm leading-relaxed">
                 Smart dispatch algorithms assign tickets straight to the responsible ward division and logistics squad, reducing idle response times.
               </p>
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -665,21 +741,135 @@ export default function Home() {
             Join other local watchdogs reporting defects, coordinating with departments, and auditing public resources.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href="/report"
-              className="w-full sm:w-auto px-8 py-3 bg-white text-background rounded-full font-bold text-sm shadow-xl hover:bg-slate-100 transition-all active:scale-95"
+            <motion.div
+              whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+              whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+              className="w-full sm:w-auto"
             >
-              Get Started
-            </Link>
-            <Link
-              href="/dashboard"
-              className="w-full sm:w-auto px-8 py-3 border border-white/10 rounded-full font-bold text-sm glass-md hover:border-electric-blue/40 transition-all"
+              <Link
+                href="/report"
+                className="w-full sm:w-auto px-9 py-3.5 bg-white text-slate-950 rounded-full font-bold text-sm shadow-xl hover:bg-slate-100 transition-all block text-center"
+              >
+                Get Started
+              </Link>
+            </motion.div>
+            
+            <motion.div
+              whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+              whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+              className="w-full sm:w-auto"
             >
-              Explore Dashboard
-            </Link>
+              <Link
+                href="/dashboard"
+                className="w-full sm:w-auto px-9 py-3.5 border border-white/10 rounded-full font-bold text-sm glass-md hover:border-electric-blue/40 hover:text-white transition-all block text-center"
+              >
+                Explore Dashboard
+              </Link>
+            </motion.div>
           </div>
         </div>
       </section>
+
+      {/* Welcome Overlay Modal */}
+      <AnimatePresence>
+        {isWelcomeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="relative max-w-2xl w-full glass-lg border border-white/10 rounded-3xl p-8 md:p-10 shadow-2xl flex flex-col gap-6 text-left max-h-[90vh] overflow-y-auto"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setIsWelcomeModalOpen(false)}
+                className="absolute top-6 right-6 p-2 bg-white/5 border border-white/5 text-slate-400 hover:text-white rounded-full transition-all"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-electric-blue/10 border border-electric-blue/20 text-[10px] font-mono tracking-widest text-electric-blue uppercase">
+                  🎬 Guided Walkthrough
+                </div>
+                <h3 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  Welcome to Judge Demo Mode
+                </h3>
+                <p className="text-sm text-slate-400 font-medium">
+                  Experience the complete AI-powered civic reporting workflow of CivicEye AI (Citizen Report → AI Analysis → AI Orchestration → Generated Report → Dashboard) in just 30–45 seconds.
+                </p>
+              </div>
+
+              {/* Scenario Selector */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                  Choose a Demo Scenario
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {demoScenarios.map((scen) => {
+                    const isSelected = selectedScenario === scen.type;
+                    return (
+                      <button
+                        key={scen.type}
+                        type="button"
+                        onClick={() => setSelectedScenario(scen.type)}
+                        className={`text-left p-4 rounded-2xl glass-md border transition-all duration-300 flex flex-col justify-between h-[120px] ${
+                          isSelected
+                            ? "border-electric-blue bg-electric-blue/5 shadow-[0_0_15px_rgba(0,209,255,0.15)]"
+                            : "border-white/5 hover:border-white/20 bg-slate-900/40"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start w-full">
+                          <span className={`text-xs font-bold ${isSelected ? "text-electric-blue" : "text-white"}`}>
+                            {scen.label}
+                          </span>
+                          <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            isSelected ? "border-electric-blue bg-electric-blue" : "border-slate-600"
+                          }`}>
+                            {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-mono line-clamp-1">{scen.location}</p>
+                          <p className="text-[10px] text-slate-500 line-clamp-2 mt-1 italic font-sans">
+                            "{scen.description}"
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-3.5 pt-4 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsWelcomeModalOpen(false);
+                    router.push("/report");
+                  }}
+                  className="w-full sm:w-auto px-6 py-3 border border-white/10 rounded-xl text-sm font-semibold text-slate-300 hover:text-white hover:bg-white/5 transition-all text-center"
+                >
+                  Explore Manually
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsWelcomeModalOpen(false);
+                    startDemo(selectedScenario);
+                  }}
+                  className="w-full sm:w-auto px-7 py-3 bg-electric-blue text-slate-950 hover:brightness-110 font-bold rounded-xl text-sm transition-all shadow-lg shadow-electric-blue/20 text-center"
+                >
+                  ▶ Start Guided Demo
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

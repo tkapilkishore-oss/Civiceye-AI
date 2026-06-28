@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GenerateReportResponse } from "@/types";
 import { saveReport } from "@/lib/dbFallback";
+import { resolveIntelligentJurisdiction } from "@/lib/jurisdictionResolver";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -8,9 +9,11 @@ function getMockReportResponse(
   issue_type: string,
   locality: string,
   ward: string,
-  severity: "Low" | "Medium" | "High" | "Critical"
+  severity: "Low" | "Medium" | "High" | "Critical",
+  city: string,
+  state: string
 ): GenerateReportResponse {
-  let authority = "Municipal Corporation Roads Department";
+  const authority = resolveIntelligentJurisdiction(city, state, issue_type);
   const priority = severity || "High";
   let action_plan = `1. Dispatch field inspector to ${locality} within 24 hours.\n2. Deploy contractor for excavation and base fill.\n3. Conduct post-repair quality verification.`;
   let cost = 5500;
@@ -19,24 +22,21 @@ function getMockReportResponse(
   let duration = "6 hours";
   let complexity: "Low" | "Medium" | "High" = "Medium";
 
-  if (issue_type === "Water Leakage") {
-    authority = "Water Supply & Sewerage Board";
+  if (issue_type === "Water Leakage" || issue_type.toLowerCase().includes("water")) {
     action_plan = `1. Isolate the main feed valve near ${locality}.\n2. Excavate and replace ruptured pipe section.\n3. Flush and restore pressure lines.`;
     cost = 28000;
     materials = ["Ductile Iron Pipe Section", "Repair Clamps", "Sand Bedding"];
     workers = 5;
     duration = "12 hours";
     complexity = "High";
-  } else if (issue_type === "Broken Streetlight") {
-    authority = "Municipal Electrical Services Division";
+  } else if (issue_type === "Broken Streetlight" || issue_type.toLowerCase().includes("light")) {
     action_plan = `1. Perform voltage checks on the local grid pillar.\n2. Replace burned bulb or damaged light arm.\n3. Update automated timer relays.`;
     cost = 2500;
     materials = ["LED Lamp Module (150W)", "Wiring Loom", "Photocell Switch"];
     workers = 2;
     duration = "2 hours";
     complexity = "Low";
-  } else if (issue_type === "Garbage Accumulation") {
-    authority = "Solid Waste Management Authority";
+  } else if (issue_type === "Garbage Accumulation" || issue_type.toLowerCase().includes("garbage")) {
     action_plan = `1. Dispatch compacting waste truck.\n2. Apply sanitizing spray to clean the overflow site.\n3. Coordinate weekly collection schedule review.`;
     cost = 3200;
     materials = ["Sanitization Disinfectant", "Bio-bags"];
@@ -96,6 +96,8 @@ export async function POST(request: Request) {
   let requestWard = "";
   let requestIssueType = "Pothole";
   let requestSeverity: "Low" | "Medium" | "High" | "Critical" = "High";
+  let requestCity = "";
+  let requestState = "";
 
   try {
     const body = await request.json();
@@ -116,13 +118,16 @@ export async function POST(request: Request) {
       citizen_name,
       contact_info,
       description,
-      explainability
+      explainability,
+      is_demo
     } = body;
 
     requestLocality = locality || "";
     requestWard = ward || "";
     requestIssueType = issue_type || "Pothole";
     requestSeverity = severity || "High";
+    requestCity = city || "";
+    requestState = state || "";
 
     const reportId = `rep_${Math.random().toString(36).substring(2, 11)}`;
 
@@ -133,7 +138,7 @@ export async function POST(request: Request) {
 
     if (testMode || !apiKey) {
       console.log(`Running in testMode (${testMode}) or missing apiKey. Using mock generator.`);
-      const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity);
+      const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity, requestCity, requestState);
       response = { ...mockObj, id: reportId };
     } else {
       // Real Gemini API Call
@@ -250,7 +255,7 @@ Guidelines:
         response = {
           id: reportId,
           priority: priority as "Low" | "Medium" | "High" | "Critical",
-          authority: parsedResult.authority || "Municipal Department",
+          authority: parsedResult.authority || resolveIntelligentJurisdiction(city || "", state || "", requestIssueType),
           action_plan: parsedResult.action_plan || "1. Dispatch inspector to verify coordinates.",
           complaint_draft: parsedResult.complaint_draft || "Administrative complaint details.",
           estimation: parsedResult.estimation || {
@@ -267,7 +272,7 @@ Guidelines:
           "Gemini API generate-report failed. Gracefully falling back to mock response data. Error details:",
           apiErr.message || apiErr
         );
-        const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity);
+        const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity, requestCity, requestState);
         response = { ...mockObj, id: reportId };
       }
     }
@@ -306,8 +311,12 @@ Guidelines:
         estimation: response.estimation || null,
         supporter_count: 1,
       };
-      await saveReport(reportDoc);
-      console.log(`Saved report ${reportId} to server database.`);
+      if (!is_demo) {
+        await saveReport(reportDoc);
+        console.log(`Saved report ${reportId} to server database.`);
+      } else {
+        console.log(`Bypassed server database save for demo report: ${reportId}`);
+      }
     } catch (saveErr) {
       console.error("Failed to save report to server database:", saveErr);
     }
@@ -317,7 +326,7 @@ Guidelines:
     console.error("Error in generate-report API:", error);
     // Even on total parse/catch error, return a mock response to ensure app never crashes
     const reportId = `rep_${Math.random().toString(36).substring(2, 11)}`;
-    const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity);
+    const mockObj = getMockReportResponse(requestIssueType, requestLocality, requestWard, requestSeverity, requestCity, requestState);
     return NextResponse.json({ ...mockObj, id: reportId });
   }
 }

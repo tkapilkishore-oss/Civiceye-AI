@@ -18,18 +18,19 @@ function getMockResponse(description: string): AnalyzeImageResponse {
   let recommended_authority = "Municipal Corporation Roads Department";
 
   const lowerDesc = (description || "").toLowerCase();
-  if (lowerDesc.includes("blurry") || lowerDesc.includes("unclear")) {
-    issue_type = "Other";
-    severity = "Low";
-    confidence = 0.45;
+  
+  if (lowerDesc.includes("pothole")) {
+    issue_type = "Pothole";
+    severity = "High";
+    confidence = 0.94;
     follow_up_questions = [
-      "The uploaded image appears blurry or unclear. Please upload a clearer image of the defect.",
-      "What is the exact landmark or street name near the issue?"
+      "Is the pothole located on a main arterial road or a secondary residential street?",
+      "Does it pose an immediate risk to cyclists or pedestrians due to depth or lighting conditions?"
     ];
-    issue_summary = "Unclear visual evidence. The submitted photograph is out of focus or suffers from poor lighting.";
-    estimated_public_impact = "Unable to assess public impact due to low visual quality.";
-    recommended_authority = "General Ward Inspectors";
-  } else if (lowerDesc.includes("leak") || lowerDesc.includes("water") || lowerDesc.includes("pipe")) {
+    issue_summary = "A deep hole or depression in the road surface which can cause damage to vehicle suspensions and tyres.";
+    estimated_public_impact = "Causes moderate traffic delays as vehicles slow down to avoid it; poses high hazard to two-wheelers.";
+    recommended_authority = "Municipal Corporation Roads Department";
+  } else if (lowerDesc.includes("water leakage") || lowerDesc.includes("leak") || lowerDesc.includes("pipe")) {
     issue_type = "Water Leakage";
     severity = "Critical";
     confidence = 0.89;
@@ -40,7 +41,7 @@ function getMockResponse(description: string): AnalyzeImageResponse {
     issue_summary = "A continuous flow of clean or waste water due to a ruptured underground main line.";
     estimated_public_impact = "Wastes potable water resources and risks undermining road foundations if soil erosion occurs.";
     recommended_authority = "Water Supply & Sewerage Board";
-  } else if (lowerDesc.includes("light") || lowerDesc.includes("dark") || lowerDesc.includes("bulb")) {
+  } else if (lowerDesc.includes("broken lights") || lowerDesc.includes("streetlight") || lowerDesc.includes("light") || lowerDesc.includes("bulb")) {
     issue_type = "Broken Streetlight";
     severity = "Medium";
     confidence = 0.97;
@@ -62,6 +63,17 @@ function getMockResponse(description: string): AnalyzeImageResponse {
     issue_summary = "A pile of uncollected solid municipal waste overflowing onto public pavement.";
     estimated_public_impact = "Aesthetic issue, foul odor, and public health hazard attracting rodents and stray animals.";
     recommended_authority = "Solid Waste Management Authority";
+  } else {
+    issue_type = "Other";
+    severity = "Low";
+    confidence = 0.45;
+    follow_up_questions = [
+      "The uploaded image appears blurry or unclear. Please upload a clearer image of the defect.",
+      "What is the exact landmark or street name near the issue?"
+    ];
+    issue_summary = "Unclear visual evidence. The submitted photograph is out of focus or suffers from poor lighting.";
+    estimated_public_impact = "Unable to assess public impact due to low visual quality.";
+    recommended_authority = "General Ward Inspectors";
   }
 
   return {

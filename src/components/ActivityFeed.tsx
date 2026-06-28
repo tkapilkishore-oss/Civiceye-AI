@@ -89,6 +89,7 @@ interface ActivityFeedProps {
 export default function ActivityFeed({ reports: dbReports = [] }: ActivityFeedProps) {
   const router = useRouter();
   const mapDbReportToSimulated = (dbReport: any): SimulatedReport => {
+    const displayWard = (dbReport.ward || "").startsWith("Ward ") ? `BBMP ${dbReport.ward}` : (dbReport.ward || "Unknown Ward");
     const logs: AgentLog[] = [
       {
         agentName: "Vision Agent",
@@ -98,13 +99,15 @@ export default function ActivityFeed({ reports: dbReports = [] }: ActivityFeedPr
       },
       {
         agentName: "Geo Agent",
-        action: `Mapped coordinates to ${dbReport.ward}.`,
+        action: `Mapped coordinates to ${displayWard}.`,
         status: "success",
         timestamp: "Just now",
       },
       {
         agentName: "Duplicate Agent",
-        action: "No active duplicates found in 200m buffer.",
+        action: dbReport.supporter_count && dbReport.supporter_count > 1
+          ? `Community Validation confirmed. Clustered ${dbReport.supporter_count} nearby matching reports.`
+          : "Initial reference complaint recorded. Awaiting community confirmations.",
         status: "success",
         timestamp: "Just now",
       },
@@ -156,7 +159,7 @@ export default function ActivityFeed({ reports: dbReports = [] }: ActivityFeedPr
     return {
       id: dbReport.id,
       locality: dbReport.locality || "Unknown Locality",
-      ward: dbReport.ward || "Unknown Ward",
+      ward: displayWard,
       issue_type: dbReport.issue_type || "Pothole",
       severity: dbReport.severity || "Medium",
       status: dbReport.status || "Investigating",
