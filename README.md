@@ -131,7 +131,7 @@ npm run dev
 
 🤖 AI & Machine Learning Engineer
 
-🔗 GitHub: https://github.com/tkapilkishore-oss
+🔗 live app : https://civiceye-ai-vert.vercel.app/
 
 ---
 
